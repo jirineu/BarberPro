@@ -341,7 +341,23 @@ window.onload = () => {
         app.dados = JSON.parse(dadosSalvos);
         if (!app.dados.historico) app.dados.historico = [];
     }
+
     const params = new URLSearchParams(window.location.search);
-    if (params.has('agendar')) app.renderView('externo');
-    else app.renderView('dash');
+    
+    if (params.has('agendar')) {
+        // Se não houver serviços cadastrados (celular do cliente), 
+        // a tela ficaria branca. Vamos avisar ou carregar algo.
+        if (app.dados.servicos.length === 0) {
+            document.body.innerHTML = `
+                <div style="padding:40px; text-align:center; color:white; background:#111; height:100vh">
+                    <h2>BarberPro</h2>
+                    <p>Olá! No momento não há serviços ou profissionais disponíveis para agendamento online.</p>
+                </div>`;
+            return;
+        }
+        // Se houver dados, renderiza a view externa
+        app.renderView('externo');
+    } else {
+        app.renderView('dash');
+    }
 };
