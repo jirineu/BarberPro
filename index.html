@@ -13,26 +13,63 @@
     </header>
 
     <main class="container-mobile">
-        <section id="view-dash" class="view-section">
-            <div class="stats-grid">
-                <div class="card-stat"><h4>Caixa Casa</h4><p id="dash-caixa">R$ 0,00</p></div>
-                <div class="card-stat"><h4>Agenda</h4><p id="dash-agenda-count">0</p></div>
-            </div>
-            <button class="btn-primary" onclick="app.renderView('add-agenda')">+ Novo Agendamento</button>
-        </section>
+    <section id="view-dash" class="view-section">
+    <div style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 10px;">
+     <button class="btn-small" onclick="app.atualizarDashPorPeriodo('dia')">Dia</button>
+<button class="btn-small" onclick="app.atualizarDashPorPeriodo('semana')">Semana</button>
+<button class="btn-small" onclick="app.atualizarDashPorPeriodo('mes')">Mês</button>
+<button class="btn-small" onclick="app.atualizarDashPorPeriodo('ano')">Ano</button>
+    </div>
 
-        <section id="view-agenda" class="view-section" style="display:none">
-            <div style="display:flex; justify-content:space-between; align-items:center">
-                <h3>Agenda Geral</h3>
-                <div>
-                    <button class="btn-small" style="background:#444; color:white" onclick="app.renderView('historico')">📜 Histórico</button>
-                    <button class="btn-small" onclick="app.compartilharLink()">🔗 Link</button>
-                </div>
-            </div><br>
-            <input type="text" placeholder="🔍 Buscar na agenda..." oninput="app.filtrarLista('agenda', this.value)" style="margin-bottom:15px">
-            <div id="lista-agenda-content"></div>
-        </section>
+    <div class="stats-grid">
+        <div class="card-stat">
+            <h4>Bruto (<span id="dash-periodo-txt">Mês</span>)</h4>
+            <p id="dash-bruto">R$ 0,00</p>
+        </div>
+        <div class="card-stat" style="border-left-color: var(--success);">
+            <h4>Líquido Casa</h4>
+            <p id="dash-liquido">R$ 0,00</p>
+        </div>
+    </div>
 
+    <div class="lista-box" style="background: var(--card); padding: 15px; border-radius: 15px;">
+        <h4 style="font-size: 11px; color: var(--accent); margin-bottom: 15px; text-transform: uppercase;">Recordes Acumulados</h4>
+        <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
+            <span style="color:#888; font-size: 13px;">Total de Cortes:</span>
+            <strong id="dash-cortes-total">0</strong>
+        </div>
+        <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
+            <span style="color:#888; font-size: 13px;">Serviço + Feito:</span>
+            <strong id="dash-servico-top">-</strong>
+        </div>
+        <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
+            <span style="color:#888; font-size: 13px;">Barbeiro + Usado:</span>
+            <strong id="dash-barbeiro-top">-</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px;">
+            <span style="color:#888; font-size: 13px;">Melhor Cliente (R$):</span>
+            <strong id="dash-cliente-top">-</strong>
+        </div>
+    </div>
+</section>
+   <section id="view-agenda" class="view-section" style="display:none">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+        <h3 style="margin:0">Agenda Geral</h3>
+        <div style="display:flex; gap:5px">
+            <button class="btn-small" onclick="app.renderView('add-agenda')" style="background:var(--accent); color:black; font-weight:bold">+ Novo</button>
+            <button class="btn-small" style="background:#333; color:white" onclick="app.renderView('historico')">📜 Histórico</button>
+            <button class="btn-small" style="background:#333; color:white" onclick="app.compartilharLink()">🔗 Link</button>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 15px;">
+        <input type="text" placeholder="🔍 Buscar por cliente ou barbeiro..." 
+               oninput="app.filtrarLista('agenda', this.value)" 
+               style="width: 100%; padding: 12px; border-radius: 8px; background: #1a1a1a; color: white; border: 1px solid #333;">
+    </div>
+
+    <div class="lista-box" id="lista-agenda-content"></div>
+</section>
         <section id="view-historico" class="view-section" style="display:none">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
                 <h3>Histórico / Gestão</h3>
