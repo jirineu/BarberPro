@@ -2,16 +2,19 @@ const app = {
     dados: {
         caixa: 0, 
         agenda: [], 
-        historico: [], // Armazena serviços concluídos
+        historico: [], 
         prestadores: [], 
         estoque: [], 
         servicos: [],
+        logsAcertos: [], // Novo: Armazena o histórico de edições de saldo
         config: { inicioDia: 8, fimDia: 19, intervalo: 30 }
     },
 
+    
+
     persistir() {
-        localStorage.setItem('barber_data', JSON.stringify(this.dados));
-    },
+    localStorage.setItem('barber_data', JSON.stringify(this.dados));
+},
 
     renderView(view, btn) {
         if (view === 'add-agenda') {
@@ -38,17 +41,133 @@ const app = {
     },
 
     atualizarDadosTela(view) {
-        if (view === 'dash') {
-            document.getElementById('dash-caixa').innerText = `R$ ${this.dados.caixa.toFixed(2)}`;
-            document.getElementById('dash-agenda-count').innerText = this.dados.agenda.length;
-        }
-        if (view === 'agenda') this.filtrarLista('agenda', '');
-        if (view === 'historico') this.filtrarHistorico();
-        if (view === 'servicos') this.filtrarLista('servicos', '');
-        if (view === 'estoque') this.filtrarLista('estoque', '');
-        if (view === 'prestadores') this.renderListaPrestadores();
-    },
+    if (view === 'dash') this.atualizarDashPorPeriodo('mes'); // Corretoif (view === 'dash') this.renderDash();
+    if (view === 'agenda') this.filtrarLista('agenda', '');
+    if (view === 'historico') this.filtrarHistorico();
+    
+    // Estas duas linhas dependem da filtrarLista estar correta:
+    if (view === 'servicos') this.filtrarLista('servicos', '');
+    if (view === 'estoque') this.filtrarLista('estoque', '');
+    
+    if (view === 'prestadores') this.renderListaPrestadores();
+},
 
+atualizarDashPorPeriodo(periodo) {
+    if (!this.dados.historico) this.dados.historico = [];
+
+    const agora = new Date();
+    const hojeString = agora.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    
+    // Criar datas de início sem interferência de fuso horário
+    let inicio = new Date();
+    inicio.setHours(0, 0, 0, 0);
+
+    if (periodo === 'dia') {
+        inicio = new Date(hojeString + 'T00:00:00');
+    } else if (periodo === 'semana') {
+        inicio.setDate(agora.getDate() - 7);
+    } else if (periodo === 'mes') {
+        inicio = new Date(agora.getFullYear(), agora.getMonth(), 1);
+    } else if (periodo === 'ano') {
+        inicio = new Date(agora.getFullYear(), 0, 1);
+    }
+
+    const filtrados = this.dados.historico.filter(h => {
+        // Pega a data de conclusão ou a data comum
+        const dataHString = h.dataConclusao || h.data;
+        if (!dataHString) return false;
+
+        // Se for filtro de dia, comparação direta de texto (mais seguro)
+        if (periodo === 'dia') {
+            return dataHString === hojeString;
+        }
+
+        // Para períodos maiores, comparamos o objeto Date
+        const dataH = new Date(dataHString + 'T12:00:00');
+        return dataH >= inicio && dataH <= agora;
+    });
+
+    // Cálculos garantindo que os números sejam lidos corretamente
+    const bruto = filtrados.reduce((acc, curr) => acc + (parseFloat(curr.valorBruto || curr.valor || 0)), 0);
+    const liquido = filtrados.reduce((acc, curr) => acc + (parseFloat(curr.valorLiquido || 0)), 0);
+
+    console.log(`Filtrados para ${periodo}:`, filtrados.length, "itens"); // Debug no console
+    
+    this.atualizarInterfaceDash(periodo === 'dia' ? 'Hoje' : periodo.charAt(0).toUpperCase() + periodo.slice(1), bruto, liquido, filtrados);
+},
+// Função auxiliar para evitar repetição de código
+atualizarInterfaceDash(texto, bruto, liquido, listaFiltrada) {
+    // 1. Elementos da Interface
+    const elBruto = document.getElementById('dash-bruto');
+    const elLiquido = document.getElementById('dash-liquido');
+    const elTxt = document.getElementById('dash-periodo-txt');
+    const elTotalCortes = document.getElementById('dash-cortes-total');
+    const elMelhorServ = document.getElementById('dash-servico-top');
+    const elMelhorPres = document.getElementById('dash-barbeiro-top');
+    const elMelhorCli = document.getElementById('dash-cliente-top');
+
+    // 2. Contadores para o Ranking
+    const contagem = { servicos: {}, prestadores: {}, clientes: {} };
+    let totalCortesReais = 0;
+
+    // 3. FILTRAGEM: Pegar APENAS o que é serviço
+    listaFiltrada.forEach(item => {
+        // Um atendimento real OBRIGATORIAMENTE tem:
+        // - Um serviço definido
+        // - Um valor bruto maior que zero
+        // - Não pode ter "AJUSTE" ou "PAGAMENTO" no nome do cliente
+        
+        const servico = item.servico || item.nomeServico;
+        const cliente = item.cliente || "";
+        const profissional = item.prestador || item.barbeiro || item.nomePrestador;
+        const valor = parseFloat(item.valorBruto || item.valor || 0);
+
+        const ehAtendimentoReal = servico && 
+                                  servico !== "---" && 
+                                  valor > 0 && 
+                                  !cliente.toUpperCase().includes("AJUSTE") && 
+                                  !cliente.toUpperCase().includes("PAGAMENTO");
+
+        if (ehAtendimentoReal) {
+            totalCortesReais++;
+            
+            // Soma para o Ranking
+            contagem.servicos[servico] = (contagem.servicos[servico] || 0) + 1;
+            contagem.prestadores[profissional] = (contagem.prestadores[profissional] || 0) + 1;
+            contagem.clientes[cliente] = (contagem.clientes[cliente] || 0) + 1;
+        }
+    });
+
+    // 4. Atualiza os Valores Financeiros (Geral do período)
+    if (elBruto) elBruto.innerText = `R$ ${bruto.toFixed(2)}`;
+    if (elLiquido) elLiquido.innerText = `R$ ${liquido.toFixed(2)}`;
+    if (elTxt) elTxt.innerText = texto;
+    if (elTotalCortes) elTotalCortes.innerText = totalCortesReais;
+
+    // 5. Lógica para descobrir o "Melhor"
+    const getMelhor = (obj) => {
+        const entries = Object.entries(obj);
+        if (entries.length === 0) return "-";
+        // Ordena por quantidade (quem aparece mais vezes)
+        return entries.sort((a, b) => b[1] - a[1])[0][0];
+    };
+
+    // 6. Alimenta os Recordes com os vencedores
+    if (elMelhorServ) elMelhorServ.innerText = getMelhor(contagem.servicos);
+    if (elMelhorPres) elMelhorPres.innerText = getMelhor(contagem.prestadores);
+    if (elMelhorCli) elMelhorCli.innerText = getMelhor(contagem.clientes);
+
+    // 7. Estilo dos botões (Seleção Única)
+    document.querySelectorAll('#view-dash .btn-small').forEach(btn => {
+        const tBtn = btn.innerText.trim().toLowerCase();
+        const tAlvo = texto.toLowerCase();
+        const active = (tAlvo === "hoje" && tBtn === "dia") || (tBtn === tAlvo);
+        
+        btn.style.background = active ? 'var(--accent)' : '#333';
+        btn.style.color = active ? 'black' : 'white';
+        btn.style.fontWeight = active ? 'bold' : 'normal';
+    });
+},
     // --- GESTÃO DE HISTÓRICO ---
 // --- GESTÃO DE HISTÓRICO ---
    // --- GESTÃO DE HISTÓRICO E FATURAMENTO ---
@@ -70,163 +189,443 @@ const app = {
     },
 
 filtrarHistorico() {
-        const dataFiltro = document.getElementById('filtro-data-hist').value;
-        const mesFiltro = document.getElementById('filtro-mes-hist').value;
-        const container = document.getElementById('lista-historico-content');
+    const dataFiltro = document.getElementById('filtro-data-hist').value;
+    const mesFiltro = document.getElementById('filtro-mes-hist').value;
+    const prestadorFiltro = document.getElementById('filtro-prestador-hist')?.value || "";
+    const container = document.getElementById('lista-historico-content');
 
-        let filtrados = [...this.dados.historico];
+    if (!container) return;
 
-        if (dataFiltro) {
-            filtrados = filtrados.filter(h => h.data === dataFiltro);
-        } else if (mesFiltro) {
-            filtrados = filtrados.filter(h => h.data.startsWith(mesFiltro));
-        }
+    let filtrados = [...(this.dados.historico || [])];
 
-        // CÁLCULOS FINANCEIROS
-        const faturamentoBruto = filtrados.reduce((acc, curr) => acc + curr.valor, 0);
-        const lucroLiquido = filtrados.reduce((acc, curr) => acc + (curr.lucroCasa || 0), 0);
+    // 1. Filtros de Data e Profissional
+    if (dataFiltro) filtrados = filtrados.filter(h => h.data === dataFiltro);
+    else if (mesFiltro) filtrados = filtrados.filter(h => h.data.startsWith(mesFiltro));
+    if (prestadorFiltro) filtrados = filtrados.filter(h => h.prestador === prestadorFiltro);
 
-        const resumoHtml = `
-            <div style="background:var(--card); padding:15px; border-radius:12px; margin-bottom:15px; border:1px solid #333;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:8px">
-                    <span style="color:#888; font-size:12px">Faturamento Bruto:</span>
-                    <strong style="color:var(--text); font-size:14px">R$ ${faturamentoBruto.toFixed(2)}</strong>
-                </div>
-                <div style="display:flex; justify-content:space-between; border-top:1px solid #333; padding-top:8px">
-                    <span style="color:#888; font-size:12px">Lucro Líquido (Casa):</span>
-                    <strong style="color:var(--success); font-size:16px">R$ ${lucroLiquido.toFixed(2)}</strong>
-                </div>
+    // 2. Cálculos do Resumo
+    const faturamentoBruto = filtrados.reduce((acc, curr) => {
+        const v = curr.valorBruto || curr.valor || 0; 
+        return acc + (v > 0 ? v : 0);
+    }, 0);
+
+    const lucroLiquido = filtrados.reduce((acc, curr) => {
+        const l = curr.valorLiquido || curr.lucroCasa || 0;
+        return acc + l;
+    }, 0);
+
+    const resumoHtml = `
+        <div style="background:var(--card); padding:15px; border-radius:12px; margin-bottom:15px; border:1px solid #333;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px">
+                <span style="color:#888; font-size:12px">Faturamento Bruto:</span>
+                <strong style="color:var(--text); font-size:14px">R$ ${faturamentoBruto.toFixed(2)}</strong>
             </div>
-        `;
+            <div style="display:flex; justify-content:space-between; border-top:1px solid #333; padding-top:8px">
+                <span style="color:#888; font-size:12px">Lucro Líquido (Caixa):</span>
+                <strong style="color:var(--success); font-size:16px">R$ ${lucroLiquido.toFixed(2)}</strong>
+            </div>
+        </div>
+    `;
 
-        container.innerHTML = resumoHtml + (filtrados.reverse().map(h => `
-            <div class="item-list" style="border-left: 4px solid #555">
+    // 3. Renderização da Lista
+    container.innerHTML = resumoHtml + (filtrados.reverse().map(h => {
+        const vBruto = h.valorBruto || 0;
+        const vLiquido = h.valorLiquido || 0;
+        const vComissao = h.valorComissao || 0;
+        const dataFormatada = h.data ? h.data.split('-').reverse().join('/') : '---';
+
+        // Identificação dos tipos
+        const isAjuste = h.cliente === "AJUSTE MANUAL";
+        const isPagamento = h.cliente === "PAGAMENTO REALIZADO";
+        const isServico = !isAjuste && !isPagamento;
+
+        // Configuração visual dinâmica
+        let labelTipo = isServico ? "✅ SERVIÇO" : (isAjuste ? "🛠️ AJUSTE" : "💰 PAGAMENTO");
+        let corBorda = isServico ? "var(--success)" : (isAjuste ? "var(--accent)" : "#888");
+        let corTextoValor = isServico ? "var(--success)" : (isAjuste ? "var(--accent)" : "white");
+        
+        // O que mostrar no valor principal (lado direito)
+        let valorPrincipal = isServico ? vLiquido : vComissao;
+
+        return `
+            <div class="item-list" style="border-left: 4px solid ${corBorda}; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; background: #1a1a1a; padding: 12px; border-radius: 8px;">
                 <div>
-                    <strong>${h.data.split('-').reverse().join('/')} - ${h.hora}</strong><br>
-                    <small>${h.cliente} (${h.prestador})</small>
+                    <strong style="color:${isServico ? 'var(--success)' : 'white'}; font-size:13px">${labelTipo}</strong>
+                    <span style="color:#666; font-size:11px; margin-left:5px">${h.servico || ''}</span><br>
+                    
+                    <small style="color:#aaa">Profissional: <b>${h.prestador || '---'}</b></small><br>
+                    <small style="color:#555; font-size:10px">${dataFormatada} - ${h.hora || ''} | Cliente: ${h.cliente}</small>
                 </div>
+                
                 <div style="text-align:right">
-                    <span style="color:var(--success); font-weight:bold; font-size:12px">R$ ${h.valor.toFixed(2)}</span><br>
-                    <small style="color:#888; font-size:10px">Liq: R$ ${h.lucroCasa.toFixed(2)}</small>
+                    <span style="color:${corTextoValor}; font-weight:bold; font-size:15px">
+                        R$ ${valorPrincipal.toFixed(2)}
+                    </span><br>
+                    <small style="color:#444; font-size:10px">
+                        ${isServico ? `Bruto: R$ ${vBruto.toFixed(2)}` : 'Movimentação'}
+                    </small>
                 </div>
             </div>
-        `).join('') || '<p style="text-align:center; padding:20px; color:#666">Sem registros no período.</p>');
-    },
-
-    prepararNovoAgendamento() {
-        const optPrestadores = this.dados.prestadores.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('');
-        const optServicos = this.dados.servicos.map(s => `<option value="${s.nome}" data-preco="${s.valor}">${s.nome} - R$ ${s.valor}</option>`).join('');
-        
-        // Data atual como padrão
-        const hoje = new Date().toISOString().split('T')[0];
-
-        const html = `
-            <input type="text" id="ag-nome" placeholder="Nome do Cliente">
-            <label style="font-size:12px; color:#888; display:block; margin-top:10px">Data:</label>
-            <input type="date" id="ag-data" value="${hoje}">
-            <label style="font-size:12px; color:#888; display:block; margin-top:10px">Barbeiro:</label>
-            <select id="ag-prestador-select" onchange="app.atualizarHorariosDisponiveis()">
-                <option value="">Selecione...</option>
-                ${optPrestadores}
-            </select>
-            <label style="font-size:12px; color:#888; display:block; margin-top:10px">Serviço:</label>
-            <select id="ag-servico-select">
-                <option value="">Selecione o serviço...</option>
-                ${optServicos}
-            </select>
-            <label style="font-size:12px; color:#888; display:block; margin-top:10px">Horário:</label>
-            <select id="ag-hora-select">
-                <option value="">Escolha o profissional...</option>
-            </select>
-            <button class="btn-primary" style="margin-top:20px" onclick="app.salvarAgenda()">Confirmar Agendamento</button>
-            <button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Cancelar</button>
         `;
-        this.abrirModalForm("Novo Agendamento", html);
-    },
+    }).join('') || '<p style="text-align:center; padding:20px; color:#666">Sem registros.</p>');
+},
 
-    salvarAgenda() {
-        const cliente = document.getElementById('ag-nome').value;
-        const data = document.getElementById('ag-data').value;
-        const prestador = document.getElementById('ag-prestador-select').value;
-        const hora = document.getElementById('ag-hora-select').value;
-        const selectServ = document.getElementById('ag-servico-select');
-        const servico = selectServ.value;
-        const preco = parseFloat(selectServ.options[selectServ.selectedIndex]?.dataset.preco);
+prepararNovoAgendamento() {
+    const optPrestadores = this.dados.prestadores.map(p => `<option value="${p.nome}">${p.nome}</option>`).join('');
+    const optServicos = this.dados.servicos.map(s => `<option value="${s.nome}" data-preco="${s.valor}">${s.nome} - R$ ${s.valor}</option>`).join('');
+    
+    // GARANTINDO QUE PUXA PREÇO E NOME DO ESTOQUE REAL
+   const optProdutos = (this.dados.estoque || []).map(p => {
+    // Tenta encontrar o preço em qualquer variação comum de nome
+    // Verifique se no seu cadastro você usou: valorVenda, valor, ou preco_venda
+    const precoItem = parseFloat(p.precoVenda || p.preco || p.valor || p.valorVenda || 0);
+    
+    // Pega a quantidade disponível
+    const qtd = p.quantidade || p.qtd || 0;
 
-        if (cliente && data && prestador && hora && servico) {
-            this.dados.agenda.push({ 
-                id: Date.now(), 
-                cliente, 
-                data, // Salvamos a data escolhida
-                prestador, 
-                hora, 
-                servico, 
-                valor: preco 
-            });
-            this.persistir();
-            this.fecharModal();
-            this.renderView('agenda');
-        } else {
-            alert("Preencha todos os campos!");
+    return `<option value="${p.nome}" data-preco="${precoItem}">${p.nome} - R$ ${precoItem.toFixed(2)} (${qtd} un)</option>`;
+}).join('');
+    const hoje = new Date().toISOString().split('T')[0];
+
+    const html = `
+        <input type="text" id="ag-nome" placeholder="Nome do Cliente">
+        <label style="font-size:12px; color:#888; display:block; margin-top:10px">Data:</label>
+        <input type="date" id="ag-data" value="${hoje}">
+        
+        <label style="font-size:12px; color:#888; display:block; margin-top:10px">Barbeiro:</label>
+        <select id="ag-prestador-select" onchange="app.atualizarHorariosDisponiveis()">
+            <option value="">Selecione...</option>
+            ${optPrestadores}
+        </select>
+        
+        <label style="font-size:12px; color:#888; display:block; margin-top:10px">Serviço:</label>
+        <select id="ag-servico-select" onchange="app.atualizarTotalAgendamento()">
+            <option value="">Selecione o serviço...</option>
+            ${optServicos}
+        </select>
+
+        <label style="font-size:12px; color:#888; display:block; margin-top:10px">Adicionar Produto (Estoque):</label>
+        <select id="ag-produto-select" onchange="app.atualizarTotalAgendamento()">
+            <option value="">Nenhum produto selecionado</option>
+            ${optProdutos}
+        </select>
+        
+        <label style="font-size:12px; color:#888; display:block; margin-top:10px">Horário:</label>
+        <select id="ag-hora-select">
+            <option value="">Escolha o profissional...</option>
+        </select>
+
+        <div id="total-preview" style="margin-top:20px; text-align:right; font-weight:bold; color:var(--success); font-size:18px; border-top:1px solid #333; padding-top:10px">
+            Total: R$ 0,00
+        </div>
+        
+        <button class="btn-primary" style="margin-top:10px" onclick="app.salvarAgenda()">Confirmar Agendamento</button>
+        <button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Cancelar</button>
+    `;
+    this.abrirModalForm("Novo Agendamento", html);
+},
+    atualizarTotalAgendamento() {
+    let total = 0;
+    
+    // 1. Pega valor do serviço selecionado
+    const servSelect = document.getElementById('ag-servico-select');
+    const selectedServ = servSelect.options[servSelect.selectedIndex];
+    if (selectedServ && selectedServ.dataset.preco) {
+        total += parseFloat(selectedServ.dataset.preco);
+    }
+
+    // 2. Pega valor do produto selecionado (Ajustado para o novo Select)
+    const prodSelect = document.getElementById('ag-produto-select');
+    if (prodSelect) {
+        const selectedProd = prodSelect.options[prodSelect.selectedIndex];
+        if (selectedProd && selectedProd.dataset.preco) {
+            total += parseFloat(selectedProd.dataset.preco);
         }
-    },
+    }
 
-    abrirCheckout(id) {
-        const item = this.dados.agenda.find(a => a.id === id);
-        const barbeiro = this.dados.prestadores.find(p => p.nome === item.prestador);
-        const comissao = barbeiro ? barbeiro.comissao : 0;
-        const lucro = item.valor - comissao;
-        
-        document.getElementById('modal-content').innerHTML = `
-            <h3>Finalizar Atendimento</h3>
-            <p>Cliente: ${item.cliente}</p>
-            <p>Serviço: ${item.servico}</p>
-            <p>Comissão Barbeiro: R$ ${comissao.toFixed(2)}</p>
-            <p style="color:var(--success); font-weight:bold">Líquido Casa: R$ ${lucro.toFixed(2)}</p>
-            <button class="btn-primary" style="margin-top:20px" onclick="app.finalizarPagamento(${id}, ${lucro})">Confirmar Pagamento</button>
-            <button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Voltar</button>
-        `;
-        document.getElementById('modal-container').style.display = 'flex';
-    },
+    // 3. Atualiza o texto na tela
+    const display = document.getElementById('total-preview');
+    if (display) {
+        display.innerText = `Total: R$ ${total.toFixed(2)}`;
+    } else {
+        // Caso você não tenha o ID total-preview, podemos criar um log ou alerta
+        console.log("Total calculado: R$ " + total.toFixed(2));
+    }
+},
 
-    finalizarPagamento(id, lucro) {
-        const index = this.dados.agenda.findIndex(a => a.id === id);
-        const itemConcluido = this.dados.agenda[index];
+salvarAgenda() {
+    const cliente = document.getElementById('ag-nome').value;
+    const data = document.getElementById('ag-data').value;
+    const prestador = document.getElementById('ag-prestador-select').value;
+    const hora = document.getElementById('ag-hora-select').value;
+    
+    // Captura o Serviço
+    const selectServ = document.getElementById('ag-servico-select');
+    const servico = selectServ.value;
+    const precoServico = parseFloat(selectServ.options[selectServ.selectedIndex]?.dataset.preco) || 0;
+
+    // Captura o Produto
+    const selectProd = document.getElementById('ag-produto-select');
+    const produtoNome = selectProd.value;
+    const precoProduto = parseFloat(selectProd.options[selectProd.selectedIndex]?.dataset.preco) || 0;
+
+    // Cálculo do valor final
+    const valorFinal = precoServico + precoProduto;
+
+    if (cliente && data && prestador && hora && servico) {
         
-        this.dados.caixa += lucro;
-        // Move para o histórico antes de remover da agenda
-        this.dados.historico.push({
-            ...itemConcluido,
-            lucroCasa: lucro,
-            dataConclusao: new Date().toISOString().split('T')[0]
+        // --- NOVO: LÓGICA DE ABATIMENTO DE ESTOQUE ---
+        if (produtoNome) {
+            // Localiza o produto no array de estoque pelo nome
+            const itemEstoque = this.dados.estoque.find(p => p.nome === produtoNome);
+            
+            if (itemEstoque) {
+                const quantidadeAtual = parseInt(itemEstoque.qtd || 0);
+                
+                if (quantidadeAtual > 0) {
+                    // Abate uma unidade
+                    itemEstoque.qtd = quantidadeAtual - 1;
+                    console.log(`Estoque de ${produtoNome} atualizado para: ${itemEstoque.qtd}`);
+                } else {
+                    // Se selecionou produto mas acabou no meio tempo, avisa e para
+                    alert(`O produto "${produtoNome}" acabou de esgotar no estoque!`);
+                    return; 
+                }
+            }
+        }
+
+        // --- SALVAR O DADO NA AGENDA ---
+        this.dados.agenda.push({ 
+            id: Date.now(), 
+            cliente, 
+            data, 
+            prestador, 
+            hora, 
+            servico: produtoNome ? `${servico} + ${produtoNome}` : servico, 
+            produto: produtoNome || null,
+            valorServico: precoServico,
+            valorProduto: precoProduto,
+            valor: valorFinal 
         });
         
-        this.dados.agenda.splice(index, 1);
-        this.persistir();
-        this.fecharModal();
-        this.renderView('dash');
-    },
+        this.persistir(); // Salva tanto a agenda nova quanto o estoque diminuído
 
-    // --- FUNÇÕES DE APOIO (MANTIDAS) ---
-    filtrarLista(tipo, termo) {
-        const termoBusca = termo.toLowerCase();
-        if (tipo === 'agenda') {
-            const container = document.getElementById('lista-agenda-content');
-            const filtrados = this.dados.agenda.filter(item => 
-                item.cliente.toLowerCase().includes(termoBusca) || 
-                item.prestador.toLowerCase().includes(termoBusca)
-            ).sort((a,b) => a.hora.localeCompare(b.hora));
+        const params = new URLSearchParams(window.location.search);
+        const ehExterno = params.has('agendar');
 
-            container.innerHTML = filtrados.map(item => `
-                <div class="item-list">
-                    <div><strong>${item.hora}</strong> - ${item.cliente}<br>
-                    <small>${item.servico} (${item.prestador})</small></div>
-                    <button class="btn-small" onclick="app.abrirCheckout(${item.id})">Pagar</button>
+        if (ehExterno) {
+            this.fecharModal();
+            document.body.innerHTML = `
+                <div style="height:100vh; background:#0f0f0f; display:flex; justify-content:center; align-items:center; font-family:sans-serif; padding:20px; color:white;">
+                    <div style="background:#1a1a1a; padding:40px; border-radius:20px; border:1px solid #D4AF37; text-align:center; max-width:400px; box-shadow: 0 10px 40px rgba(0,0,0,0.8);">
+                        <div style="font-size:60px; color:#D4AF37; margin-bottom:20px;">✓</div>
+                        <h2 style="color:#D4AF37; margin-bottom:10px;">Agendamento Realizado!</h2>
+                        <p style="color:#ccc; margin-bottom:25px; line-height:1.6;">
+                            Olá <strong>${cliente}</strong>, seu horário para <strong>${servico}${produtoNome ? ' e ' + produtoNome : ''}</strong> com <strong>${prestador}</strong> foi reservado.
+                            <br><br>Total: <strong>R$ ${valorFinal.toFixed(2)}</strong>
+                        </p>
+                        <div style="background:#252525; padding:15px; border-radius:10px; margin-bottom:25px; text-align:left; border-left:4px solid #D4AF37;">
+                            <p style="margin:5px 0;">📅 Data: ${data.split('-').reverse().join('/')}</p>
+                            <p style="margin:5px 0;">⏰ Hora: ${hora}</p>
+                        </div>
+                        <button onclick="window.location.reload()" style="width:100%; padding:15px; background:#D4AF37; border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:black; font-size:16px;">OK, ENTENDIDO</button>
+                    </div>
                 </div>
-            `).join('') || '<p>Agenda vazia.</p>';
+            `;
+            document.body.style.overflow = 'hidden';
+            return; 
         }
-        // ... (outros filtros de serviço/estoque seguem a mesma lógica original)
-    },
+
+        this.fecharModal();
+        this.renderView('agenda'); 
+        
+    } else {
+        alert("Preencha todos os campos!");
+    }
+},
+abrirCheckout(id) {
+    const item = this.dados.agenda.find(a => a.id === id);
+    if (!item) return;
+
+    const valorBruto = parseFloat(item.valor) || 0;
+
+    document.getElementById('modal-content').innerHTML = `
+        <h3 style="margin-bottom:15px">Finalizar Atendimento</h3>
+        <p><strong>Cliente:</strong> ${item.cliente}</p>
+        <p><strong>Serviço:</strong> ${item.servico}</p>
+        <p><strong>Barbeiro:</strong> ${item.prestador}</p>
+        
+        <div style="margin: 20px 0; padding: 20px; background: #1a1a1a; border-radius: 10px; text-align: center; border: 1px solid #333;">
+            <span style="color: #888; font-size: 14px;">Total Pago pelo Cliente:</span>
+            <h2 style="color:var(--success); margin-top:5px">R$ ${valorBruto.toFixed(2)}</h2>
+        </div>
+        
+        <button class="btn-primary" onclick="app.finalizarPagamento(${id})">Confirmar Pagamento</button>
+        
+        <button type="button" class="btn-primary" style="background:#b30000; margin-top:10px" onclick="app.excluirAgendamento(${id})">Excluir Agendamento</button>
+
+        <button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Voltar</button>
+    `;
+    document.getElementById('modal-container').style.display = 'flex';
+},
+excluirAgendamento(id) {
+    if (confirm("Deseja realmente excluir este agendamento?")) {
+        // 1. Localiza o índice
+        const index = this.dados.agenda.findIndex(a => a.id === id);
+        
+        if (index !== -1) {
+            // 2. Remove do array de dados
+            this.dados.agenda.splice(index, 1);
+            
+            // 3. SALVA NO LOCALSTORAGE (Crucial)
+            this.persistir();
+            
+            // 4. Fecha o modal primeiro para evitar erros de renderização
+            this.fecharModal();
+            
+            // 5. Atualiza a tela da agenda com um pequeno delay para garantir o processamento
+            setTimeout(() => {
+                this.renderView('agenda');
+                // Se a função filtrarLista existir, força a atualização da lista visual
+                if (typeof this.filtrarLista === 'function') {
+                    this.filtrarLista('agenda', '');
+                }
+            }, 50);
+            
+            console.log("Agendamento excluído e salvo com sucesso!");
+        }
+    }
+},
+
+finalizarPagamento(id) {
+    const index = this.dados.agenda.findIndex(a => a.id === id);
+    if (index === -1) return;
+
+    const itemConcluido = this.dados.agenda[index];
+    let custoProdutoTotal = 0;
+
+    // --- LÓGICA DE ESTOQUE E CUSTO ---
+    if (itemConcluido.produto) {
+        // Buscamos o produto no estoque para baixar a quantidade e capturar o preço de custo
+        const pEstoque = this.dados.estoque.find(p => p.nome === itemConcluido.produto);
+        
+        if (pEstoque) {
+            // Baixa no estoque (usando 'qtd' ou 'quantidade' conforme seu cadastro)
+            if (pEstoque.qtd > 0) pEstoque.qtd -= 1;
+            else if (pEstoque.quantidade > 0) pEstoque.quantidade -= 1;
+
+            // Captura o custo do produto para o cálculo financeiro
+            custoProdutoTotal = parseFloat(pEstoque.precoCusto) || 0;
+        }
+    }
+
+    const funcionario = this.dados.prestadores.find(p => p.nome === itemConcluido.prestador);
+    const valorComissaoFixo = funcionario ? parseFloat(funcionario.comissao) : 0;
+    
+    const valorBruto = parseFloat(itemConcluido.valor) || 0;
+
+    // --- NOVO CÁLCULO FINANCEIRO ---
+    // Valor Líquido = (Serviço + Venda Produto) - Comissão Barbeiro - Custo de Aquisição do Produto
+    const valorLiquido = valorBruto - valorComissaoFixo - custoProdutoTotal;
+
+    // Atualiza o Caixa da Casa
+    if (typeof this.dados.caixa !== 'number') this.dados.caixa = 0;
+    this.dados.caixa += valorLiquido;
+
+    // Salva no Histórico com os novos detalhes
+    if (!this.dados.historico) this.dados.historico = [];
+    this.dados.historico.push({
+        ...itemConcluido,
+        valorBruto: valorBruto,           // Total que o cliente pagou
+        valorComissao: valorComissaoFixo, // Parte do barbeiro
+        valorCustoItem: custoProdutoTotal, // O que você pagou no produto (custo)
+        valorLiquido: valorLiquido,       // O lucro real que sobrou no seu bolso
+        dataConclusao: new Date().toISOString().split('T')[0]
+    });
+    
+    // Finalização
+    this.dados.agenda.splice(index, 1);
+    this.persistir();
+    this.fecharModal();
+    this.renderView('dash');
+
+    // Log para conferência no console
+    console.log(`Venda Finalizada: 
+        Bruto: R$ ${valorBruto} 
+        (-) Comissão: R$ ${valorComissaoFixo} 
+        (-) Custo Prod: R$ ${custoProdutoTotal} 
+        (=) Lucro Real: R$ ${valorLiquido}`);
+},
+    // --- FUNÇÕES DE APOIO (MANTIDAS) ---
+filtrarLista(tipo, termo) {
+    const termoBusca = termo.toLowerCase();
+
+    // --- BLOCO DE SERVIÇOS ---
+    if (tipo === 'servicos') {
+        const container = document.getElementById('lista-servicos-content');
+        if (!container) return;
+        const filtrados = (this.dados.servicos || []).filter(s => s.nome.toLowerCase().includes(termoBusca));
+        container.innerHTML = filtrados.map(s => `
+            <div class="item-list" style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #333;">
+                <div>
+                    <strong>${s.nome}</strong><br>
+                    <small>R$ ${parseFloat(s.valor || 0).toFixed(2)}</small>
+                </div>
+                <button class="btn-small" style="background:#444; color:white" onclick="app.prepararEdicaoServico(${s.id})">Editar</button>
+            </div>
+        `).join('') || '<p style="text-align:center; padding:10px; color:#666">Nenhum serviço cadastrado.</p>';
+    }
+
+    // --- BLOCO DE ESTOQUE ---
+    if (tipo === 'estoque') {
+        const container = document.getElementById('lista-estoque-content');
+        if (!container) return;
+        const filtrados = (this.dados.estoque || []).filter(e => e.nome.toLowerCase().includes(termoBusca));
+        container.innerHTML = filtrados.map(e => {
+            const venda = parseFloat(e.precoVenda || e.preco || 0);
+            const qtd = parseInt(e.qtd || 0);
+            return `
+                <div class="item-list" style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #333; border-left: 4px solid ${qtd > 0 ? '#28a745' : '#dc3545'}">
+                    <div>
+                        <strong>${e.nome}</strong><br>
+                        <small>Qtd: ${qtd} | Venda: R$ ${venda.toFixed(2)}</small>
+                    </div>
+                    <button class="btn-small" style="background:#444; color:white" onclick="app.prepararEdicaoEstoque(${e.id})">Editar</button>
+                </div>
+            `;
+        }).join('') || '<p style="text-align:center; padding:10px; color:#666">Estoque vazio.</p>';
+    }
+
+    // --- BLOCO DE AGENDA (O que estava faltando) ---
+   if (tipo === 'agenda') {
+        const container = document.getElementById('lista-agenda-content');
+        if (!container) return;
+
+        const filtrados = (this.dados.agenda || []).filter(a => {
+            // Agora filtra apenas pelo termo de busca (nome do cliente ou prestador)
+            return a.cliente.toLowerCase().includes(termoBusca) || 
+                   a.prestador.toLowerCase().includes(termoBusca);
+        });
+
+        // Ordena por data e depois por hora para não ficar bagunçado
+        filtrados.sort((a, b) => a.data.localeCompare(b.data) || a.hora.localeCompare(b.hora));
+
+        container.innerHTML = filtrados.map(a => `
+            <div class="item-list" style="border-left: 4px solid var(--accent); margin-bottom: 8px; background: #1a1a1a; padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="font-size:16px; color:white">${a.data.split('-').reverse().join('/')} - ${a.hora}</strong><br>
+                    <span style="color:white; font-weight:bold">${a.cliente}</span><br>
+                    <small style="color:var(--accent)">✂️ ${a.servico}</small>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-weight:bold; color:var(--success); margin-bottom:5px">R$ ${parseFloat(a.valor || 0).toFixed(2)}</div>
+                    <button class="btn-small" style="background:var(--success); color:black; font-weight:bold; border:none; padding:8px 12px; border-radius:5px; cursor:pointer" 
+                            onclick="app.abrirCheckout(${a.id})">FINALIZAR</button>
+                </div>
+            </div>
+        `).join('') || `<p style="text-align:center; padding:20px; color:#666">Nenhum agendamento encontrado.</p>`;
+    }
+},
 
     abrirModalForm(titulo, html) {
         const modal = document.getElementById('modal-container');
@@ -256,108 +655,408 @@ filtrarHistorico() {
         selectHora.innerHTML = html;
     },
 
-    renderListaPrestadores() {
+// Adicione estas funções dentro do objeto app:
+renderListaPrestadores() {
         document.getElementById('lista-pre').innerHTML = [...this.dados.prestadores].reverse().map(p => `
             <div class="item-list">
-                <div><strong>${p.nome}</strong><br><small>Comissão: R$ ${p.comissao}</small></div>
-                <button class="btn-small" style="background:#444; color:white" onclick="app.prepararEdicaoPrestador(${p.id})">Editar</button>
+                <div><strong>${p.nome}</strong><br><small>Comissão fixa: R$ ${p.comissao}</small></div>
+                <div style="display:flex; gap:5px">
+                    <button class="btn-small" style="background:var(--success); color:white" onclick="app.abrirAcerto(${p.id})">Acerto</button>
+                    <button class="btn-small" style="background:#444; color:white" onclick="app.prepararEdicaoPrestador(${p.id})">Editar</button>
+                </div>
             </div>
-        `).join('');
+        `).join('') || '<p style="text-align:center; padding:10px; color:#666">Nenhum profissional cadastrado.</p>';
     },
 
-    prepararEdicaoServico(id = null) {
-        const s = id ? this.dados.servicos.find(x => x.id === id) : { nome: '', valor: '' };
-        const html = `<input type="hidden" id="srv-id" value="${id || ''}"><input type="text" id="srv-nome" placeholder="Nome do Serviço" value="${s.nome}"><input type="number" id="srv-valor" placeholder="Valor R$" value="${s.valor}"><button class="btn-primary" onclick="app.salvarServico()">Salvar</button><button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Cancelar</button>`;
-        this.abrirModalForm(id ? "Editar Serviço" : "Novo Serviço", html);
-    },
-
-    salvarServico() {
-        const nome = document.getElementById('srv-nome').value;
-        const valor = parseFloat(document.getElementById('srv-valor').value);
-        const id = document.getElementById('srv-id').value;
-        if (nome && !isNaN(valor)) {
-            if (id) {
-                const idx = this.dados.servicos.findIndex(s => s.id == id);
-                this.dados.servicos[idx] = { id: parseInt(id), nome, valor };
-            } else {
-                this.dados.servicos.push({ id: Date.now(), nome, valor });
-            }
-            this.persistir(); this.fecharModal(); this.renderView('servicos');
-        }
-    },
-    
     prepararEdicaoPrestador(id = null) {
-        const p = id ? this.dados.prestadores.find(x => x.id === id) : { nome: '', comissao: '' };
-        const html = `<input type="hidden" id="pre-id" value="${id || ''}"><input type="text" id="pre-nome" placeholder="Nome" value="${p.nome}"><input type="number" id="pre-comissao" placeholder="Comissão" value="${p.comissao}"><button class="btn-primary" onclick="app.salvarPrestador()">Salvar</button><button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Cancelar</button>`;
-        this.abrirModalForm(id ? "Editar Prestador" : "Novo Prestador", html);
-    },
+    const p = id ? this.dados.prestadores.find(x => x.id === id) : { nome: '', comissao: '' };
+    
+    // Botão de excluir só aparece se for uma edição (tiver ID)
+    const btnExcluir = id ? `<button class="btn-primary" style="background:var(--danger); color:white; margin-top:5px" onclick="app.excluirItem('prestadores', ${id})">Excluir Profissional</button>` : '';
+
+    const html = `
+        <input type="hidden" id="pre-id" value="${id || ''}">
+        <label style="font-size:12px; color:#888">Nome:</label>
+        <input type="text" id="pre-nome" value="${p.nome}">
+        <label style="font-size:12px; color:#888; margin-top:10px; display:block">Comissão (R$):</label>
+        <input type="number" id="pre-comissao" value="${p.comissao}">
+        
+        <button class="btn-primary" style="margin-top:20px" onclick="app.salvarPrestador()">Salvar</button>
+        ${btnExcluir}
+        <button class="btn-primary" style="background:#333; margin-top:5px" onclick="app.fecharModal()">Cancelar</button>
+    `;
+    this.abrirModalForm(id ? "Editar Profissional" : "Novo Profissional", html);
+},
 
     salvarPrestador() {
+        const id = document.getElementById('pre-id').value;
         const nome = document.getElementById('pre-nome').value;
         const comissao = parseFloat(document.getElementById('pre-comissao').value);
-        const id = document.getElementById('pre-id').value;
-        if (nome && !isNaN(comissao)) {
-            if (id) {
-                const idx = this.dados.prestadores.findIndex(p => p.id == id);
-                this.dados.prestadores[idx] = { id: parseInt(id), nome, comissao };
-            } else {
-                this.dados.prestadores.push({ id: Date.now(), nome, comissao });
-            }
-            this.persistir(); this.fecharModal(); this.renderView('prestadores');
+
+        if (!nome || isNaN(comissao)) {
+            alert("Preencha o nome e a comissão corretamente!");
+            return;
         }
-    },
 
-    prepararEdicaoEstoque(id = null) {
-        const e = id ? this.dados.estoque.find(x => x.id === id) : { nome: '', qtd: '', preco: '' };
-        const html = `<input type="hidden" id="est-id" value="${id || ''}"><input type="text" id="est-nome" placeholder="Nome do Produto" value="${e.nome}"><input type="number" id="est-qtd" placeholder="Quantidade" value="${e.qtd}"><input type="number" id="est-preco" placeholder="Preço" value="${e.preco}"><button class="btn-primary" onclick="app.salvarEstoque()">Salvar</button><button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Cancelar</button>`;
-        this.abrirModalForm(id ? "Editar Item" : "Novo Item", html);
-    },
-
-    salvarEstoque() {
-        const nome = document.getElementById('est-nome').value;
-        const qtd = parseInt(document.getElementById('est-qtd').value);
-        const preco = parseFloat(document.getElementById('est-preco').value) || 0;
-        const id = document.getElementById('est-id').value;
-        if (nome && !isNaN(qtd)) {
-            if (id) {
-                const idx = this.dados.estoque.findIndex(e => e.id == id);
-                this.dados.estoque[idx] = { id: parseInt(id), nome, qtd, preco };
-            } else {
-                this.dados.estoque.push({ id: Date.now(), nome, qtd, preco });
+        if (id) {
+            // Caso de Edição: Localiza pelo ID e atualiza
+            const index = this.dados.prestadores.findIndex(p => p.id == id);
+            if (index !== -1) {
+                this.dados.prestadores[index].nome = nome;
+                this.dados.prestadores[index].comissao = comissao;
             }
-            this.persistir(); this.fecharModal(); this.renderView('estoque');
+        } else {
+            // Caso de Novo: Cria um novo objeto com ID único
+            this.dados.prestadores.push({
+                id: Date.now(),
+                nome: nome,
+                comissao: comissao
+            });
         }
+
+        this.persistir(); // Salva no LocalStorage
+        this.fecharModal(); // Fecha o formulário
+        this.renderListaPrestadores(); // Atualiza a lista na tela
     },
 
-    compartilharLink() {
-        const url = window.location.href.split('?')[0] + "?agendar=true";
-        navigator.clipboard.writeText(url).then(() => alert("Link de agendamento copiado!"));
+    // --- DENTRO DO OBJETO APP ---
+
+abrirAcerto(id) {
+    const p = this.dados.prestadores.find(x => x.id === id);
+    
+    // CÁLCULO DINÂMICO: Soma comissões e subtrai pagamentos
+    const saldoAtual = this.dados.historico
+        .filter(h => h.prestador === p.nome)
+        .reduce((acc, curr) => {
+            const valorParaSomar = curr.valorComissao || 0;
+            return acc + valorParaSomar;
+        }, 0);
+
+    // Renderiza os logs (histórico visual)
+    const logs = (this.dados.logsAcertos || [])
+        .filter(l => l.prestadorId === id)
+        .reverse()
+        .map(l => {
+            if (l.tipo === 'pagamento') {
+                return `
+                    <div style="font-size:11px; color:#888; border-bottom:1px solid #333; padding:5px 0; display:flex; justify-content:space-between">
+                        <span>${l.data.split(',')[0]} (PAGO)</span>
+                        <strong style="color:var(--success)">- R$ ${l.valorPago.toFixed(2)}</strong>
+                    </div>`;
+            } else {
+                return `
+                    <div style="font-size:11px; color:#888; border-bottom:1px solid #333; padding:5px 0; display:flex; justify-content:space-between">
+                        <span>${l.data.split(',')[0]} (AJUSTE)</span>
+                        <span>R$ ${l.antigo.toFixed(2)} ➔ R$ ${l.novo.toFixed(2)}</span>
+                    </div>`;
+            }
+        }).join('') || '<p style="font-size:11px; color:#555">Sem movimentações.</p>';
+
+    const html = `
+        <div style="text-align:center; margin-bottom:20px; background:#151515; padding:20px; border-radius:15px; border:1px solid #333">
+            <h2 style="color:var(--accent); font-size:28px">R$ ${saldoAtual.toFixed(2)}</h2>
+            <small style="color:#888">Comissões acumuladas de ${p.nome}</small>
+        </div>
+        
+        <div style="background:#1a1a1a; padding:15px; border-radius:10px; margin-bottom:20px; border:1px solid #222">
+            <label style="font-size:11px; color:#888; display:block; margin-bottom:8px">Corrigir saldo atual para (R$):</label>
+            <div style="display:flex; gap:8px">
+                <input type="number" id="novo-saldo-acerto" placeholder="0.00" style="flex:1; margin-bottom:0; height:35px; background:#000; border:1px solid #333; color:white; border-radius:5px; padding:0 10px">
+                <button onclick="app.confirmarAjusteSaldo(${id}, ${saldoAtual})" style="background:var(--accent); color:black; border:none; padding:0 15px; border-radius:5px; font-weight:bold; cursor:pointer">OK</button>
+            </div>
+        </div>
+        <label style="font-size:12px; color:#888">Histórico de Acertos/Edições:</label>
+        <div style="max-height:120px; overflow-y:auto; background:#111; padding:10px; border-radius:8px; margin-bottom:20px; border:1px solid #222">
+            ${logs}
+        </div>
+
+        <button class="btn-primary" style="background:var(--success); color:black" onclick="app.zerarComissao(${id}, ${saldoAtual})">Confirmar Pagamento Total (R$)</button>
+        <button class="btn-primary" style="background:#333; margin-top:10px" onclick="app.fecharModal()">Voltar</button>
+    `;
+    this.abrirModalForm(`Acerto: ${p.nome}`, html);
+},
+confirmarAjusteSaldo(id, saldoAntigo) {
+    const p = this.dados.prestadores.find(x => x.id === id);
+    const campoInput = document.getElementById('novo-saldo-acerto');
+    const novoSaldo = parseFloat(campoInput.value);
+
+    if (isNaN(novoSaldo)) return alert("Insira um valor válido.");
+    const diferenca = novoSaldo - saldoAntigo;
+    if (diferenca === 0) return alert("O valor é igual ao atual.");
+
+    // Registro no Histórico (Afetando o Lucro Líquido da Casa)
+    this.dados.historico.push({
+        id: Date.now(),
+        cliente: "AJUSTE MANUAL",
+        prestador: p.nome, // Agora salva o nome corretamente para o filtro
+        servico: diferenca > 0 ? "Aumento de Saldo" : "Desconto de Saldo",
+        valorBruto: 0,
+        valorLiquido: -diferenca, // Se o funcionário ganha +, a casa perde lucro líquido
+        valorComissao: diferenca,
+        data: new Date().toISOString().split('T')[0],
+        hora: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
+    });
+
+    if (!this.dados.logsAcertos) this.dados.logsAcertos = [];
+    this.dados.logsAcertos.push({
+        prestadorId: id,
+        tipo: 'edicao',
+        data: new Date().toLocaleString('pt-BR'),
+        antigo: saldoAntigo,
+        novo: novoSaldo
+    });
+
+    this.persistir();
+    alert(`Saldo de ${p.nome} ajustado!`);
+    this.abrirAcerto(id); // Recarrega a modal
+},
+zerarComissao(id, valorPago) {
+    if (valorPago <= 0) return alert("Não há saldo para pagar.");
+    if (!confirm(`Confirmar pagamento de R$ ${valorPago.toFixed(2)}?`)) return;
+
+    const p = this.dados.prestadores.find(x => x.id === id);
+
+    this.dados.historico.push({
+        id: Date.now(),
+        cliente: "PAGAMENTO REALIZADO",
+        prestador: p.nome, // Para quem foi o pagamento
+        servico: "Baixa de Comissão",
+        valorBruto: 0,
+        valorLiquido: 0,   // Pagamento de comissão não altera lucro (já foi deduzido no serviço)
+        valorComissao: -valorPago, // Zera o saldo do funcionário
+        data: new Date().toISOString().split('T')[0],
+        hora: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
+    });
+
+    this.dados.logsAcertos.push({
+        prestadorId: id,
+        tipo: 'pagamento',
+        data: new Date().toLocaleString('pt-BR'),
+        valorPago: valorPago
+    });
+
+    this.persistir();
+    this.fecharModal();
+    alert("Pagamento registrado e saldo zerado!");
+},
+
+    prepararEdicaoServico(id = null) {
+    const s = id ? this.dados.servicos.find(x => x.id === id) : { nome: '', valor: '' };
+    const btnExcluir = id ? `<button class="btn-primary" style="background:var(--danger); color:white; margin-top:5px" onclick="app.excluirItem('servicos', ${id})">Excluir Serviço</button>` : '';
+
+    const html = `
+        <input type="hidden" id="ser-id" value="${id || ''}">
+        <label style="font-size:12px; color:#888">Nome do Serviço:</label>
+        <input type="text" id="ser-nome" value="${s.nome}">
+        <label style="font-size:12px; color:#888; margin-top:10px; display:block">Preço (R$):</label>
+        <input type="number" id="ser-valor" value="${s.valor}">
+        
+        <button class="btn-primary" style="margin-top:20px" onclick="app.salvarServico()">Salvar</button>
+        ${btnExcluir}
+        <button class="btn-primary" style="background:#333; margin-top:5px" onclick="app.fecharModal()">Cancelar</button>
+    `;
+    this.abrirModalForm(id ? "Editar Serviço" : "Novo Serviço", html);
+},
+
+salvarServico() {
+    const nome = document.getElementById('ser-nome').value;
+    const valor = parseFloat(document.getElementById('ser-valor').value);
+    const id = document.getElementById('ser-id').value;
+    if (nome && !isNaN(valor)) {
+        if (id) {
+            const idx = this.dados.servicos.findIndex(s => s.id == id);
+            this.dados.servicos[idx] = { id: parseInt(id), nome, valor };
+        } else {
+            this.dados.servicos.push({ id: Date.now(), nome, valor });
+        }
+        this.persistir(); this.fecharModal(); this.renderView('servicos');
     }
+},
+
+   prepararEdicaoEstoque(id = null) {
+    // Busca os dados ou define valores padrão (incluindo precoCusto)
+    const e = id ? this.dados.estoque.find(x => x.id === id) : { nome: '', qtd: '', precoVenda: '', precoCusto: '' };
+    
+    // Tratamento para manter compatibilidade com itens antigos que usavam apenas .preco
+    const precoVendaAtual = e.precoVenda || e.preco || '';
+
+    const btnExcluir = id ? `<button class="btn-primary" style="background:var(--danger); color:white; margin-top:5px" onclick="app.excluirItem('estoque', ${id})">Excluir Produto</button>` : '';
+
+    const html = `
+        <input type="hidden" id="est-id" value="${id || ''}">
+        
+        <label style="font-size:12px; color:#888">Produto:</label>
+        <input type="text" id="est-nome" value="${e.nome}" placeholder="Nome do produto">
+        
+        <label style="font-size:12px; color:#888; margin-top:10px; display:block">Quantidade em Estoque:</label>
+        <input type="number" id="est-qtd" value="${e.qtd}" placeholder="Ex: 10">
+        
+        <div style="display:flex; gap:10px; margin-top:10px">
+            <div style="flex:1">
+                <label style="font-size:12px; color:#888">Preço Custo (R$):</label>
+                <input type="number" id="est-preco-custo" value="${e.precoCusto || ''}" placeholder="0.00" step="0.01">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:12px; color:#888">Preço Venda (R$):</label>
+                <input type="number" id="est-preco-venda" value="${precoVendaAtual}" placeholder="0.00" step="0.01">
+            </div>
+        </div>
+        
+        <button class="btn-primary" style="margin-top:20px" onclick="app.salvarEstoque()">Salvar Produto</button>
+        ${btnExcluir}
+        <button class="btn-primary" style="background:#333; margin-top:5px" onclick="app.fecharModal()">Cancelar</button>
+    `;
+    this.abrirModalForm(id ? "Editar Item" : "Novo Item", html);
+},
+    salvarEstoque() {
+    const nome = document.getElementById('est-nome').value;
+    const qtd = parseInt(document.getElementById('est-qtd').value);
+    const precoCusto = parseFloat(document.getElementById('est-preco-custo').value) || 0;
+    const precoVenda = parseFloat(document.getElementById('est-preco-venda').value) || 0;
+    const id = document.getElementById('est-id').value;
+
+    if (nome && !isNaN(qtd)) {
+        const dadosProduto = { 
+            id: id ? parseInt(id) : Date.now(), 
+            nome, 
+            qtd, 
+            precoCusto, 
+            precoVenda 
+        };
+
+        if (id) {
+            const idx = this.dados.estoque.findIndex(e => e.id == id);
+            this.dados.estoque[idx] = dadosProduto;
+        } else {
+            this.dados.estoque.push(dadosProduto);
+        }
+
+        this.persistir(); 
+        this.fecharModal(); 
+        this.renderView('estoque');
+    } else {
+        alert("Por favor, preencha o nome e a quantidade.");
+    }
+},
+
+    excluirItem(tipo, id) {
+    const confirmacao = confirm("Tem certeza que deseja excluir este item? Esta ação não pode ser desfeita.");
+    if (confirmacao) {
+        // Filtra o array removendo o item com o ID correspondente
+        this.dados[tipo] = this.dados[tipo].filter(item => item.id !== id);
+        
+        this.persistir();
+        this.fecharModal();
+        
+        // Atualiza a tela correta após excluir
+        if (tipo === 'prestadores') this.renderListaPrestadores();
+        else this.renderView(tipo);
+        
+        alert("Item excluído com sucesso!");
+    }
+},
+compartilharLink() {
+    try {
+        if (!this.dados.servicos || this.dados.servicos.length === 0) {
+            alert("Cadastre pelo menos um serviço antes de compartilhar!");
+            return;
+        }
+
+        const dadosSimples = {
+            s: this.dados.servicos,
+            p: this.dados.prestadores
+        };
+        
+        const token = btoa(unescape(encodeURIComponent(JSON.stringify(dadosSimples))));
+        const url = window.location.origin + window.location.pathname + `?agendar=true&data=${token}`;
+        
+        navigator.clipboard.writeText(url).then(() => {
+            alert("Link de agendamento copiado! Envie para seus clientes.");
+        });
+    } catch (e) {
+        console.error("Erro ao gerar link:", e);
+        alert("Não foi possível gerar o link. Verifique se os dados estão corretos.");
+    }
+},
 };
 
 window.onload = () => {
-    const dadosSalvos = localStorage.getItem('barber_data');
-    if (dadosSalvos) {
-        app.dados = JSON.parse(dadosSalvos);
-        if (!app.dados.historico) app.dados.historico = [];
+    // 1. Carregar dados do LocalStorage (Navegador)
+    try {
+        const dadosSalvos = localStorage.getItem('barber_data');
+        if (dadosSalvos) {
+            app.dados = JSON.parse(dadosSalvos);
+        }
+    } catch (e) { 
+        console.error("Erro ao carregar storage"); 
     }
+
+    // Garantia de estrutura mínima para evitar erros de "undefined"
+    if (!app.dados) app.dados = {};
+    if (!app.dados.servicos) app.dados.servicos = [];
+    if (!app.dados.prestadores) app.dados.prestadores = [];
+    if (!app.dados.agenda) app.dados.agenda = [];
+    if (!app.dados.historico) app.dados.historico = [];
+    if (!app.dados.estoque) app.dados.estoque = [];
+    if (!app.dados.logsAcertos) app.dados.logsAcertos = [];
+    if (!app.dados.caixa) app.dados.caixa = 0;
 
     const params = new URLSearchParams(window.location.search);
     
-    if (params.has('agendar')) {
-        // Se não houver serviços cadastrados (celular do cliente), 
-        // a tela ficaria branca. Vamos avisar ou carregar algo.
-        if (app.dados.servicos.length === 0) {
-            document.body.innerHTML = `
-                <div style="padding:40px; text-align:center; color:white; background:#111; height:100vh">
-                    <h2>BarberPro</h2>
-                    <p>Olá! No momento não há serviços ou profissionais disponíveis para agendamento online.</p>
-                </div>`;
-            return;
+    // 2. Importar dados da URL (Protegido contra sobrescrita)
+    if (params.has('data')) {
+        try {
+            const token = params.get('data');
+            const json = decodeURIComponent(escape(atob(token)));
+            const importados = JSON.parse(json);
+            
+            if (app.dados.servicos.length === 0 && importados.s) app.dados.servicos = importados.s;
+            if (app.dados.prestadores.length === 0 && importados.p) app.dados.prestadores = importados.p;
+            
+            app.persistir(); 
+        } catch (e) { 
+            console.error("Erro na importação de dados externos"); 
         }
-        // Se houver dados, renderiza a view externa
-        app.renderView('externo');
-    } else {
-        app.renderView('dash');
     }
+
+    // 3. Lógica para o Link de Agendamento (Visão do Cliente)
+    if (params.has('agendar')) {
+        app.renderView('dash'); 
+        
+        const seletoresParaEsconder = ['.tab-bar', '.mobile-header', '#view-dash', '#view-agenda', '#view-equipe', '#view-servicos', '.admin-only'];
+        seletoresParaEsconder.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el) el.style.display = 'none';
+        });
+
+        document.body.style.background = "#000";
+
+        if (typeof app.prepararNovoAgendamento === 'function') {
+            app.prepararNovoAgendamento();
+        }
+
+        const fecharOriginal = app.fecharModal;
+        app.fecharModal = () => {
+            fecharOriginal.call(app);
+            document.body.innerHTML = `
+                <div style="height:100vh; background:#111; display:flex; flex-direction:column; justify-content:center; align-items:center; color:white; font-family:sans-serif; text-align:center; padding:20px;">
+                    <div style="font-size: 50px; margin-bottom: 20px;">📅</div>
+                    <h2 style="color:var(--accent)">Agendamento encerrado.</h2>
+                    <p style="color:#666; margin-top:10px">Para realizar um novo agendamento, clique no botão abaixo.</p>
+                    <button onclick="window.location.reload()" style="margin-top:20px; padding:15px 30px; background:#D4AF37; border:none; border-radius:10px; font-weight:bold; cursor:pointer; color:black; text-transform:uppercase;">Novo Agendamento</button>
+                </div>`;
+        };
+
+    } else {
+    // 1. Renderiza a estrutura da view
+    app.renderView('dash');
+    
+    // 2. Aguarda o DOM e aplica os dados
+    setTimeout(() => {
+        if (typeof app.atualizarDashPorPeriodo === 'function') {
+            // Isso vai disparar a atualizarInterfaceDash com os cálculos
+            app.atualizarDashPorPeriodo('mes'); 
+        }
+    }, 200); // 200ms é o tempo de segurança ideal
+}
 };
