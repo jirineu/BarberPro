@@ -13,12 +13,13 @@
     </header>
 
     <main class="container-mobile">
-    <section id="view-dash" class="view-section">
+<section id="view-dash" class="view-section">
     <div style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 10px;">
-     <button class="btn-small" onclick="app.atualizarDashPorPeriodo('dia')">Dia</button>
-<button class="btn-small" onclick="app.atualizarDashPorPeriodo('semana')">Semana</button>
-<button class="btn-small" onclick="app.atualizarDashPorPeriodo('mes')">Mês</button>
-<button class="btn-small" onclick="app.atualizarDashPorPeriodo('ano')">Ano</button>
+        <button class="btn-small" onclick="app.atualizarDashPorPeriodo('dia')">Dia</button>
+        <button class="btn-small" onclick="app.atualizarDashPorPeriodo('semana')">Semana</button>
+        <button class="btn-small" onclick="app.atualizarDashPorPeriodo('mes')">Mês</button>
+        <button class="btn-small" onclick="app.atualizarDashPorPeriodo('ano')">Ano</button>
+        <button class="btn-small" onclick="app.atualizarDashPorPeriodo('tudo')">Tudo</button>
     </div>
 
     <div class="stats-grid">
@@ -33,22 +34,25 @@
     </div>
 
     <div class="lista-box" style="background: var(--card); padding: 15px; border-radius: 15px;">
-        <h4 style="font-size: 11px; color: var(--accent); margin-bottom: 15px; text-transform: uppercase;">Recordes Acumulados</h4>
+        <h4 style="font-size: 11px; color: var(--accent); margin-bottom: 15px; text-transform: uppercase;">Recordes do Período</h4>
+        
         <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
             <span style="color:#888; font-size: 13px;">Total de Cortes:</span>
             <strong id="dash-cortes-total">0</strong>
         </div>
         <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
-            <span style="color:#888; font-size: 13px;">Serviço + Feito:</span>
-            <strong id="dash-servico-top">-</strong>
-        </div>
-        <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
             <span style="color:#888; font-size: 13px;">Barbeiro + Usado:</span>
             <strong id="dash-barbeiro-top">-</strong>
         </div>
-        <div style="display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 10px;">
-            <span style="color:#888; font-size: 13px;">Melhor Cliente (R$):</span>
+        <div style="margin-bottom: 12px; display: flex; justify-content: space-between;">
+            <span id="label-cliente-periodo" style="color:#888; font-size: 13px;">Cliente do Período:</span>
             <strong id="dash-cliente-top">-</strong>
+        </div>
+
+        <h4 style="font-size: 11px; color: var(--success); margin: 20px 0 10px 0; text-transform: uppercase; border-top: 1px solid #333; padding-top: 15px;">Recorde Histórico (Permanente)</h4>
+        <div style="display: flex; justify-content: space-between;">
+            <span style="color:#888; font-size: 13px;">🏆 Melhor Cliente de Sempre:</span>
+            <strong id="dash-cliente-permanente" style="color: var(--accent)">-</strong>
         </div>
     </div>
 </section>
