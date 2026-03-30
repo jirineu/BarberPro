@@ -13,13 +13,16 @@
         header { text-align: center; padding: 20px 0; border-bottom: 1px solid var(--accent); margin-bottom: 20px; }
         h1 { color: var(--accent); font-size: 1.4rem; text-transform: uppercase; letter-spacing: 2px; }
         
-        /* NOVOS ESTILOS PARA OS BOTÕES DE LOJA */
         .store-selector { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 15px; justify-content: center; }
         .store-btn { 
             padding: 5px 10px; border: 1px solid #444; background: #222; color: #888; 
             border-radius: 4px; cursor: pointer; font-size: 0.7rem; text-transform: uppercase;
         }
         .store-btn.active { border-color: var(--accent); color: var(--accent); background: #2a2410; }
+        /* ESTILO PARA O BOTÃO PRODUÇÃO */
+        .store-btn.mode-prod-btn { border-color: var(--diff); color: var(--diff); }
+        .store-btn.mode-prod-btn.active { background: #1a2e21; }
+        
         .add-store { background: var(--accent); color: var(--bg); font-weight: bold; width: 30px; }
 
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
@@ -93,9 +96,9 @@
             { id: 41, nome: "Coxinha de catupiry" }
         ];
 
-        // LOGICA DE LOJAS
         let stores = JSON.parse(localStorage.getItem('stores_list')) || ["Vila Prudente", "Interlagos", "São Bernardo Max"];
-        let activeStore = localStorage.getItem('active_store') || "";
+        let activeStore = localStorage.getItem('active_store') || stores[0];
+        let isModeProducao = localStorage.getItem('mode_producao') === 'true';
 
         let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
         let isCalculated = false; 
@@ -105,11 +108,13 @@
             container.innerHTML = '';
             stores.forEach(name => {
                 const btn = document.createElement('button');
-                btn.className = `store-btn ${activeStore === name ? 'active' : ''}`;
+                btn.className = `store-btn ${(!isModeProducao && activeStore === name) ? 'active' : ''}`;
                 btn.innerText = name;
                 btn.onclick = () => {
                     activeStore = name;
+                    isModeProducao = false;
                     localStorage.setItem('active_store', name);
+                    localStorage.setItem('mode_producao', 'false');
                     renderStores();
                 };
                 container.appendChild(btn);
@@ -126,6 +131,17 @@
                 }
             };
             container.appendChild(addBtn);
+
+            // NOVO BOTÃO MODO PRODUÇÃO
+            const prodBtn = document.createElement('button');
+            prodBtn.className = `store-btn mode-prod-btn ${isModeProducao ? 'active' : ''}`;
+            prodBtn.innerText = 'MODO PRODUÇÃO';
+            prodBtn.onclick = () => {
+                isModeProducao = true;
+                localStorage.setItem('mode_producao', 'true');
+                renderStores();
+            };
+            container.appendChild(prodBtn);
         }
 
         function render() {
@@ -158,7 +174,7 @@
         function saveAsBase() {
             localStorage.setItem('last_pdf_base', JSON.stringify(db));
             isCalculated = true; 
-            document.getElementById('status-msg').innerText = `✅ Base salva para ${activeStore || 'Loja'}. PDF será PRODUÇÃO.`;
+            document.getElementById('status-msg').innerText = `✅ Base salva. PDF será gerado como Produção.`;
             alert("Valores salvos como Base!");
         }
 
@@ -212,16 +228,25 @@
             const doc = new jsPDF();
             let y = 20;
 
-            const lojaNome = activeStore ? activeStore.replace(/\s+/g, '_') : "Loja";
-            const tipoDoc = isCalculated ? "producao" : "loja";
-            const nomeArquivo = `${lojaNome}_${tipoDoc}.pdf`;
+            let nomeArquivo = "";
+            let tituloLabel = "";
+
+            if (isModeProducao) {
+                nomeArquivo = "producao.pdf";
+                tituloLabel = "PRODUÇÃO UNIFICADA";
+            } else {
+                const lojaNome = activeStore.replace(/\s+/g, '_') || "Loja";
+                const tipo = isCalculated ? "producao" : "loja";
+                nomeArquivo = `${lojaNome}_${tipo}.pdf`;
+                tituloLabel = `${activeStore.toUpperCase()} - ${tipo.toUpperCase()}`;
+            }
 
             doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
             doc.setTextColor(212, 175, 55); doc.setFontSize(16);
-            doc.text(`${activeStore || 'LOJA'} - ${tipoDoc.toUpperCase()}`, 105, y, { align: 'center' });
+            doc.text(tituloLabel, 105, y, { align: 'center' });
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
-            const itensParaImprimir = isCalculated ? db.filter(item => item.qtd !== 0) : db;
+            const itensParaImprimir = (isCalculated || isModeProducao) ? db.filter(item => item.qtd !== 0) : db;
 
             itensParaImprimir.forEach(item => {
                 doc.text(`${item.nome}`, 20, y); 
@@ -231,10 +256,7 @@
             });
             
             doc.save(nomeArquivo);
-            if(isCalculated) {
-                isCalculated = false;
-                document.getElementById('status-msg').innerText = "PDF de Produção gerado. Modo retornado para LOJA.";
-            }
+            if(isCalculated) isCalculated = false;
         }
 
         document.getElementById('doc-import').onchange = e => handleFile(e.target.files[0]);
