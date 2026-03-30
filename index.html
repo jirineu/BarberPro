@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salgados Express - Relatório Completo</title>
+    <title>Salgados Express - Sistema de Gestão</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
@@ -42,17 +42,17 @@
     <header><h1>Estoque de Salgados</h1></header>
 
     <div class="controls">
-        <label class="btn" for="doc-import">📥 IMPORTAR PDF</label>
+        <label class="btn" for="doc-import">📥 PDF LOJA</label>
         <input type="file" id="doc-import" accept=".pdf,application/pdf">
         
-        <button class="btn" onclick="exportPDF()">📄 GERAR PDF</button>
+        <button class="btn" onclick="exportPDF()">📄 PDF PRODUÇÃO</button>
 
         <button class="btn" onclick="saveAsBase()">💾 SALVAR BASE</button>
         <button class="btn btn-calc" onclick="applyDifferenceToScreen()">🧮 CALCULAR DIFERENÇA</button>
 
         <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2; height: 40px;">LIMPAR TUDO</button>
         
-        <div class="info-msg" id="status-msg">O PDF agora gerará a lista completa (incluindo zeros).</div>
+        <div class="info-msg" id="status-msg">O sistema agora utiliza os novos rótulos de Loja e Produção.</div>
     </div>
 
     <div id="inventory-list"></div>
@@ -181,24 +181,23 @@
 
             doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
             doc.setTextColor(212, 175, 55); doc.setFontSize(16);
-            doc.text("RELATÓRIO GERAL DE ESTOQUE", 105, y, { align: 'center' });
+            doc.text("PDF PRODUÇÃO", 105, y, { align: 'center' });
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
             
-            // Alterado para percorrer todos os itens, incluindo os com qtd = 0
             db.forEach(item => {
                 doc.text(`${item.nome}`, 20, y); 
                 doc.text(String(item.qtd), 180, y, { align: 'right' });
                 y += 8;
                 
-                // Quebra de página se necessário
                 if(y > 280) { 
                     doc.addPage(); y = 20; 
                     doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F'); 
                 }
             });
             
-            doc.save('relatorio_completo.pdf');
+            // Nome do arquivo alterado para pdf_producao.pdf
+            doc.save('pdf_producao.pdf');
         }
 
         document.getElementById('doc-import').onchange = e => handleFile(e.target.files[0]);
