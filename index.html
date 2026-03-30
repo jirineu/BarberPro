@@ -52,7 +52,7 @@
 
         <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2; height: 40px;">LIMPAR TUDO</button>
         
-        <div class="info-msg" id="status-msg">O nome do PDF mudará automaticamente para 'Produção' após o cálculo.</div>
+        <div class="info-msg" id="status-msg">O PDF Produção ocultará itens zerados automaticamente.</div>
     </div>
 
     <div id="inventory-list"></div>
@@ -83,7 +83,7 @@
         ];
 
         let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
-        let isCalculated = false; // Controle para saber se a diferença foi aplicada
+        let isCalculated = false; 
 
         function render() {
             const list = document.getElementById('inventory-list');
@@ -114,7 +114,7 @@
 
         function saveAsBase() {
             localStorage.setItem('last_pdf_base', JSON.stringify(db));
-            isCalculated = false; // Reseta o estado ao salvar nova base
+            isCalculated = false; 
             document.getElementById('status-msg').innerText = "✅ Base salva. Próximo PDF será: LOJA.";
             alert("Valores salvos como Base!");
         }
@@ -134,7 +134,7 @@
                 return { ...item, qtd: valorAtual - valorBase };
             });
 
-            isCalculated = true; // Ativa o modo produção
+            isCalculated = true; 
             document.getElementById('status-msg').innerText = "📊 Diferença aplicada. Próximo PDF será: PRODUÇÃO.";
             render();
         }
@@ -183,7 +183,6 @@
             const doc = new jsPDF();
             let y = 20;
 
-            // Define o nome baseado no estado do cálculo
             const tituloDoc = isCalculated ? "PDF PRODUÇÃO" : "PDF LOJA";
             const nomeArquivo = isCalculated ? "producao.pdf" : "loja.pdf";
 
@@ -193,7 +192,10 @@
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
             
-            db.forEach(item => {
+            // AJUSTE: Filtra itens zerados apenas se for PDF PRODUÇÃO
+            const itensParaImprimir = isCalculated ? db.filter(item => item.qtd !== 0) : db;
+
+            itensParaImprimir.forEach(item => {
                 doc.text(`${item.nome}`, 20, y); 
                 doc.text(String(item.qtd), 180, y, { align: 'right' });
                 y += 8;
