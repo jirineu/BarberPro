@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salgados Express - Diferença em Tempo Real</title>
+    <title>Salgados Express - Relatório Completo</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
@@ -52,13 +52,13 @@
 
         <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2; height: 40px;">LIMPAR TUDO</button>
         
-        <div class="info-msg" id="status-msg">Os valores importados serão somados aos da tela.</div>
+        <div class="info-msg" id="status-msg">O PDF agora gerará a lista completa (incluindo zeros).</div>
     </div>
 
     <div id="inventory-list"></div>
 
     <div class="loading-overlay" id="loader">
-        <div style="color: var(--accent); margin-bottom: 10px;">Somando PDF à tela...</div>
+        <div style="color: var(--accent); margin-bottom: 10px;">Processando dados...</div>
     </div>
 
     <script>
@@ -82,7 +82,6 @@
             { id: 41, nome: "Coxinha de catupiry" }
         ];
 
-        // db sempre reflete o que está visível na tela e no Local Storage
         let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
 
         function render() {
@@ -100,7 +99,6 @@
                     </div>`;
                 list.appendChild(div);
             });
-            // Salva o estado atual da tela no Local Storage
             localStorage.setItem('salgados_db_v3', JSON.stringify(db));
         }
 
@@ -113,14 +111,12 @@
             if(item) { item.qtd = parseInt(v) || 0; render(); }
         }
 
-        // Salva a base de comparação silenciosamente no storage
         function saveAsBase() {
             localStorage.setItem('last_pdf_base', JSON.stringify(db));
-            document.getElementById('status-msg').innerText = "✅ Base salva. Agora a tela mostrará a diferença ao calcular.";
+            document.getElementById('status-msg').innerText = "✅ Base salva para cálculo de diferença.";
             alert("Valores da tela salvos como Base!");
         }
 
-        // Calcula a diferença e ATUALIZA A TELA com o resultado
         function applyDifferenceToScreen() {
             const baseStr = localStorage.getItem('last_pdf_base');
             if(!baseStr) {
@@ -133,20 +129,18 @@
                 const baseItem = baseData.find(b => b.id === item.id);
                 const valorBase = baseItem ? (parseInt(baseItem.qtd) || 0) : 0;
                 const valorAtual = parseInt(item.qtd) || 0;
-
-                // A tela agora passa a exibir a Diferença
                 return { ...item, qtd: valorAtual - valorBase };
             });
 
-            document.getElementById('status-msg').innerText = "📊 Diferença aplicada à tela e salva no Storage.";
-            render(); // render() já salva no localStorage automaticamente
+            document.getElementById('status-msg').innerText = "📊 Diferença aplicada à tela.";
+            render();
         }
 
         function clearData() { 
             if(confirm('Limpar tela e memória?')) { 
                 db = DATA_BASE.map(item => ({ ...item, qtd: 0 }));
                 localStorage.clear();
-                document.getElementById('status-msg').innerText = "Tudo limpo.";
+                document.getElementById('status-msg').innerText = "Memória limpa.";
                 render(); 
             } 
         }
@@ -171,12 +165,10 @@
                         const valorExtraido = parseInt(match[1]);
                         let localItem = db.find(i => i.id === item.id);
                         if(localItem) {
-                            // SOMA ao que já está na tela
                             localItem.qtd += valorExtraido;
                         }
                     }
                 });
-                document.getElementById('status-msg').innerText = "📥 PDF importado e somado à tela.";
             } catch (e) { alert("Erro ao ler PDF."); }
             document.getElementById('loader').style.display = 'none';
             render();
@@ -189,22 +181,24 @@
 
             doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
             doc.setTextColor(212, 175, 55); doc.setFontSize(16);
-            doc.text("RELATÓRIO DE ESTOQUE", 105, y, { align: 'center' });
+            doc.text("RELATÓRIO GERAL DE ESTOQUE", 105, y, { align: 'center' });
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
             
+            // Alterado para percorrer todos os itens, incluindo os com qtd = 0
             db.forEach(item => {
-                if(item.qtd !== 0) {
-                    doc.text(`${item.nome}`, 20, y); 
-                    doc.text(String(item.qtd), 180, y, { align: 'right' });
-                    y += 8;
-                    if(y > 280) { 
-                        doc.addPage(); y = 20; 
-                        doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F'); 
-                    }
+                doc.text(`${item.nome}`, 20, y); 
+                doc.text(String(item.qtd), 180, y, { align: 'right' });
+                y += 8;
+                
+                // Quebra de página se necessário
+                if(y > 280) { 
+                    doc.addPage(); y = 20; 
+                    doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F'); 
                 }
             });
-            doc.save('estoque_atualizado.pdf');
+            
+            doc.save('relatorio_completo.pdf');
         }
 
         document.getElementById('doc-import').onchange = e => handleFile(e.target.files[0]);
