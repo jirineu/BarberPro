@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salgados Express - Gestão ID</title>
+    <title>Salgados Express - Correção de Soma</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -33,24 +33,24 @@
 </head>
 <body>
 
-    <header><h1>Estoque Profissional</h1></header>
+    <header><h1>Estoque de Salgados</h1></header>
 
     <div class="controls">
         <label class="btn" for="cam-capture">📸 ESCANEAR</label>
         <input type="file" id="cam-capture" accept="image/*" capture="environment">
         
-        <button class="btn" onclick="exportPDF()">📄 PDF</button>
+        <button class="btn" onclick="exportPDF()">📄 GERAR PDF</button>
         
-        <label class="btn" for="doc-import">📥 IMPORTAR</label>
+        <label class="btn" for="doc-import">📥 IMPORTAR DOC</label>
         <input type="file" id="doc-import" accept=".json,application/json,.pdf,application/pdf">
 
-        <button class="btn" onclick="clearData()" style="border-color: #666; color: #666;">ZERAR</button>
+        <button class="btn" onclick="clearData()" style="border-color: #666; color: #666;">ZERAR TUDO</button>
     </div>
 
     <div id="inventory-list"></div>
 
     <div class="loading-overlay" id="loader">
-        <div style="color: var(--accent); margin-bottom: 10px;">Processando IDs e Soma...</div>
+        <div style="color: var(--accent); margin-bottom: 10px;">Somando Quantidades...</div>
         <div id="progress" style="font-size: 1.5rem; color: white;">0%</div>
         <canvas id="pdf-canvas" style="display:none;"></canvas>
     </div>
@@ -58,7 +58,6 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // LISTA COM IDs ÚNICOS PARA CADA PRODUTO
         const DATA_BASE = [
             { id: 1, nome: "Atum" }, { id: 2, nome: "Berinjela" }, { id: 3, nome: "Brasileiro" },
             { id: 4, nome: "Brócolis" }, { id: 5, nome: "Bauru" }, { id: 6, nome: "Carne com queijo" },
@@ -77,13 +76,12 @@
             { id: 41, nome: "Coxinha de catupiry" }
         ];
 
-        let db = JSON.parse(localStorage.getItem('salgados_db_v2')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
+        let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
 
         function render() {
             const list = document.getElementById('inventory-list');
             list.innerHTML = '';
-            
-            db.forEach((item, index) => {
+            db.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = `item-card ${item.qtd > 0 ? 'active' : ''}`;
                 div.innerHTML = `
@@ -95,10 +93,9 @@
                     </div>`;
                 list.appendChild(div);
             });
-            localStorage.setItem('salgados_db_v2', JSON.stringify(db));
+            localStorage.setItem('salgados_db_v3', JSON.stringify(db));
         }
 
-        // Funções agora usam o ID em vez do INDEX para segurança total
         function upd(id, v) { 
             const item = db.find(i => i.id === id);
             if(item) { item.qtd = Math.max(0, (parseInt(item.qtd) || 0) + v); render(); }
@@ -108,31 +105,6 @@
             if(item) { item.qtd = Math.max(0, parseInt(v) || 0); render(); }
         }
         function clearData() { if(confirm('Zerar tudo?')) { db.forEach(i => i.qtd = 0); render(); } }
-
-        async function exportPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            let y = 20;
-            doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
-            doc.setTextColor(212, 175, 55); doc.setFontSize(16); doc.text("ESTOQUE ATUALIZADO", 105, y, { align: 'center' });
-            y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
-            
-            db.forEach(item => {
-                if(item.qtd > 0) {
-                    if (y > 280) { doc.addPage(); doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F'); y = 20; }
-                    doc.text(`${item.id} - ${item.nome}`, 20, y); 
-                    doc.text(String(item.qtd), 180, y, { align: 'right' });
-                    doc.setDrawColor(51, 51, 51); doc.line(20, y+2, 190, y+2); y += 8;
-                }
-            });
-
-            const pdfBlob = doc.output('blob');
-            const url = URL.createObjectURL(pdfBlob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'estoque.pdf';
-            document.body.appendChild(a); a.click();
-            URL.revokeObjectURL(url); document.body.removeChild(a);
-        }
 
         async function handleFile(file) {
             if(!file) return;
@@ -149,62 +121,74 @@
                     const context = canvas.getContext('2d');
                     canvas.height = viewport.height; canvas.width = viewport.width;
                     await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    source = canvas.toDataURL('image/jpeg', 0.9);
+                    source = canvas.toDataURL();
                 }
 
-                const result = await Tesseract.recognize(source, 'por', {
-                    logger: m => { if(m.status==='recognizing text') document.getElementById('progress').innerText = Math.round(m.progress*100)+'%'; }
-                });
-
+                const result = await Tesseract.recognize(source, 'por');
                 const textLines = result.data.text.toLowerCase().split('\n');
 
-                // Lógica de Reconhecimento Blindada por ID e Tamanho de Texto
-                // Ordenamos a busca pelos nomes mais longos primeiro (ex: "Carne com queijo")
+                // Ordenar por nomes longos para evitar conflito (ex: "Carne com queijo" vs "Carne")
                 const sortedSearch = [...db].sort((a, b) => b.nome.length - a.nome.length);
 
                 textLines.forEach(line => {
                     for (let item of sortedSearch) {
                         const nomeSabor = item.nome.toLowerCase();
                         
-                        // Se a linha contém o nome do sabor
                         if (line.includes(nomeSabor)) {
-                            const match = line.match(/\d+/);
+                            // CORREÇÃO: Remove o nome do sabor da linha antes de buscar o número
+                            // Isso impede que o sistema confunda IDs numéricos se eles estiverem no nome
+                            let linePure = line.replace(nomeSabor, ""); 
+                            
+                            const match = linePure.match(/\d+/);
                             if (match) {
-                                const valor = parseInt(match[0]);
+                                const qtdExtraida = parseInt(match[0]);
                                 
-                                // Se for o item "Carne" (curto), ele não pode validar se a linha for "Carne com queijo"
-                                if (item.nome === "Carne" && (line.includes("queijo") || line.includes("cheddar") || line.includes("seca") || line.includes("especial"))) {
-                                    continue; 
+                                // Bloqueio para não somar "Carne" se a linha for "Carne com queijo"
+                                if (item.nome === "Carne" && (line.includes("queijo") || line.includes("cheddar") || line.includes("seca"))) {
+                                    continue;
                                 }
 
-                                item.qtd = (parseInt(item.qtd) || 0) + valor;
-                                break; // Encontrou o sabor mais específico na linha, pula para a próxima linha
+                                // SOMA CUMULATIVA: Valor atual + Valor do PDF
+                                item.qtd = (parseInt(item.qtd) || 0) + qtdExtraida;
+                                break; 
                             }
                         }
                     }
                 });
-            } catch (e) { console.error(e); alert("Erro na leitura."); }
+            } catch (e) { alert("Erro na leitura."); }
             loader.style.display = 'none';
             render();
         }
 
+        async function exportPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            let y = 20;
+            doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
+            doc.setTextColor(212, 175, 55); doc.text("ESTOQUE ATUAL", 105, y, { align: 'center' });
+            y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
+            db.forEach(item => {
+                if(item.qtd > 0) {
+                    doc.text(`${item.nome}`, 20, y); 
+                    doc.text(String(item.qtd), 180, y, { align: 'right' });
+                    y += 8;
+                }
+            });
+            doc.save('estoque.pdf');
+        }
+
         document.getElementById('cam-capture').onchange = e => handleFile(e.target.files[0]);
-        
         document.getElementById('doc-import').onchange = e => {
             const file = e.target.files[0];
-            if (!file) return;
-            if (file.name.toLowerCase().endsWith('.json')) {
+            if (file && file.name.endsWith('.json')) {
                 const reader = new FileReader();
                 reader.onload = ev => { 
-                    try {
-                        const imported = JSON.parse(ev.target.result);
-                        imported.forEach(imp => {
-                            // Busca pelo ID no import para garantir que seja o produto certo
-                            let local = db.find(i => i.id === imp.id);
-                            if(local) local.qtd = (parseInt(local.qtd) || 0) + (parseInt(imp.qtd) || 0);
-                        });
-                        render();
-                    } catch(e) { alert("JSON Inválido"); }
+                    const imported = JSON.parse(ev.target.result);
+                    imported.forEach(imp => {
+                        let local = db.find(i => i.id === imp.id);
+                        if(local) local.qtd += (parseInt(imp.qtd) || 0);
+                    });
+                    render();
                 };
                 reader.readAsText(file);
             } else { handleFile(file); }
