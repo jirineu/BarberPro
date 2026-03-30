@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salgados Express - Sistema de Gestão</title>
+    <title>Salgados Express - Gestão</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
@@ -42,17 +42,17 @@
     <header><h1>Estoque de Salgados</h1></header>
 
     <div class="controls">
-        <label class="btn" for="doc-import">📥 PDF LOJA</label>
+        <label class="btn" for="doc-import">📥 IMPORTAR PDF</label>
         <input type="file" id="doc-import" accept=".pdf,application/pdf">
         
-        <button class="btn" onclick="exportPDF()">📄 PDF PRODUÇÃO</button>
+        <button class="btn" onclick="exportPDF()">📄 GERAR PDF</button>
 
         <button class="btn" onclick="saveAsBase()">💾 SALVAR BASE</button>
         <button class="btn btn-calc" onclick="applyDifferenceToScreen()">🧮 CALCULAR DIFERENÇA</button>
 
         <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2; height: 40px;">LIMPAR TUDO</button>
         
-        <div class="info-msg" id="status-msg">O sistema agora utiliza os novos rótulos de Loja e Produção.</div>
+        <div class="info-msg" id="status-msg">O nome do PDF mudará automaticamente para 'Produção' após o cálculo.</div>
     </div>
 
     <div id="inventory-list"></div>
@@ -83,6 +83,7 @@
         ];
 
         let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
+        let isCalculated = false; // Controle para saber se a diferença foi aplicada
 
         function render() {
             const list = document.getElementById('inventory-list');
@@ -113,8 +114,9 @@
 
         function saveAsBase() {
             localStorage.setItem('last_pdf_base', JSON.stringify(db));
-            document.getElementById('status-msg').innerText = "✅ Base salva para cálculo de diferença.";
-            alert("Valores da tela salvos como Base!");
+            isCalculated = false; // Reseta o estado ao salvar nova base
+            document.getElementById('status-msg').innerText = "✅ Base salva. Próximo PDF será: LOJA.";
+            alert("Valores salvos como Base!");
         }
 
         function applyDifferenceToScreen() {
@@ -132,13 +134,15 @@
                 return { ...item, qtd: valorAtual - valorBase };
             });
 
-            document.getElementById('status-msg').innerText = "📊 Diferença aplicada à tela.";
+            isCalculated = true; // Ativa o modo produção
+            document.getElementById('status-msg').innerText = "📊 Diferença aplicada. Próximo PDF será: PRODUÇÃO.";
             render();
         }
 
         function clearData() { 
             if(confirm('Limpar tela e memória?')) { 
                 db = DATA_BASE.map(item => ({ ...item, qtd: 0 }));
+                isCalculated = false;
                 localStorage.clear();
                 document.getElementById('status-msg').innerText = "Memória limpa.";
                 render(); 
@@ -179,9 +183,13 @@
             const doc = new jsPDF();
             let y = 20;
 
+            // Define o nome baseado no estado do cálculo
+            const tituloDoc = isCalculated ? "PDF PRODUÇÃO" : "PDF LOJA";
+            const nomeArquivo = isCalculated ? "producao.pdf" : "loja.pdf";
+
             doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
             doc.setTextColor(212, 175, 55); doc.setFontSize(16);
-            doc.text("PDF PRODUÇÃO", 105, y, { align: 'center' });
+            doc.text(tituloDoc, 105, y, { align: 'center' });
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
             
@@ -196,8 +204,7 @@
                 }
             });
             
-            // Nome do arquivo alterado para pdf_producao.pdf
-            doc.save('pdf_producao.pdf');
+            doc.save(nomeArquivo);
         }
 
         document.getElementById('doc-import').onchange = e => handleFile(e.target.files[0]);
