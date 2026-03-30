@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salgados Express - Calculador de Diferença</title>
+    <title>Salgados Express - Painel Consolidado</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
@@ -12,51 +12,53 @@
         body { background-color: var(--bg); color: var(--text); padding: 15px; padding-bottom: 80px; }
         header { text-align: center; padding: 20px 0; border-bottom: 1px solid var(--accent); margin-bottom: 20px; }
         h1 { color: var(--accent); font-size: 1.4rem; text-transform: uppercase; letter-spacing: 2px; }
+        
+        /* Organização dos botões em pares */
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        
         .btn {
             background: transparent; border: 1px solid var(--accent); color: var(--accent);
-            padding: 12px; border-radius: 5px; font-weight: bold; cursor: pointer;
-            display: flex; align-items: center; justify-content: center; font-size: 0.8rem; text-align: center;
+            padding: 15px 5px; border-radius: 5px; font-weight: bold; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; font-size: 0.75rem; text-align: center;
+            height: 55px; text-transform: uppercase;
         }
         .btn:active { background: var(--accent); color: var(--bg); }
         .btn-calc { border-color: var(--diff); color: var(--diff); }
+        
         #inventory-list { display: grid; gap: 8px; }
         .item-card { background: var(--card); border-left: 4px solid var(--border); padding: 12px 15px; display: flex; align-items: center; justify-content: space-between; border-radius: 4px; }
         .item-card.active { border-left-color: var(--accent); }
-        .item-card.is-diff { border-left-color: var(--diff); background: #1a251e; }
+        
         .qty-controls { display: flex; align-items: center; gap: 8px; }
         .qty-btn { width: 40px; height: 40px; border-radius: 5px; border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 1.3rem; display: flex; align-items: center; justify-content: center; }
         .qty-input { width: 45px; text-align: center; background: transparent; border: none; color: white; font-size: 1rem; font-weight: bold; }
+        
         .loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; flex-direction: column; align-items: center; justify-content: center; }
         input[type="file"] { display: none; }
-        .id-badge { font-size: 0.6rem; color: #666; margin-right: 5px; }
-        .info-msg { font-size: 0.7rem; color: #aaa; grid-column: span 2; text-align: center; margin-top: -5px; margin-bottom: 10px; }
+        .info-msg { font-size: 0.7rem; color: #aaa; grid-column: span 2; text-align: center; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <header><h1>Estoque de Salgados</h1></header>
+    <header><h1>Estoque Consolidado</h1></header>
 
     <div class="controls">
         <label class="btn" for="doc-import">📥 IMPORTAR PDF</label>
         <input type="file" id="doc-import" accept=".pdf,application/pdf">
+        <button class="btn" onclick="exportPDF()">📄 GERAR PDF</button>
 
-        <button class="btn" onclick="saveAsBase()">💾 SALVAR COMO BASE</button>
+        <button class="btn" onclick="saveAsBase()">💾 SALVAR BASE</button>
+        <button class="btn btn-calc" onclick="calculateAndAccumulate()">🧮 CALCULAR / SOMAR</button>
+
+        <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2; height: 40px;">LIMPAR TUDO</button>
         
-        <button class="btn btn-calc" onclick="calculateDifference()">🧮 CALCULAR DIFERENÇA</button>
-        
-        <button class="btn" onclick="exportPDF()">📄 GERAR PDF FINAL</button>
-
-        <div class="info-msg" id="status-msg">Importe o PDF e salve como base para calcular a diferença.</div>
-
-        <button class="btn" onclick="clearData()" style="border-color: #666; color: #666; grid-column: span 2;">ZERAR TUDO</button>
+        <div class="info-msg" id="status-msg">Pronto para processar.</div>
     </div>
 
     <div id="inventory-list"></div>
 
     <div class="loading-overlay" id="loader">
-        <div style="color: var(--accent); margin-bottom: 10px;">Lendo dados do PDF...</div>
-        <div id="progress" style="font-size: 1.5rem; color: white;">Processando...</div>
+        <div style="color: var(--accent); margin-bottom: 10px;">Processando PDF...</div>
     </div>
 
     <script>
@@ -81,16 +83,16 @@
         ];
 
         let db = JSON.parse(localStorage.getItem('salgados_db_v3')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
-        let isCalculated = false;
+        let consolidado = JSON.parse(localStorage.getItem('salgados_consolidado')) || DATA_BASE.map(item => ({ ...item, qtd: 0 }));
 
         function render() {
             const list = document.getElementById('inventory-list');
             list.innerHTML = '';
             db.forEach((item) => {
                 const div = document.createElement('div');
-                div.className = `item-card ${item.qtd !== 0 ? 'active' : ''} ${isCalculated ? 'is-diff' : ''}`;
+                div.className = `item-card ${item.qtd !== 0 ? 'active' : ''}`;
                 div.innerHTML = `
-                    <div class="item-name"><span class="id-badge">#${item.id}</span>${item.nome}</div>
+                    <div class="item-name">#${item.id} - ${item.nome}</div>
                     <div class="qty-controls">
                         <button class="qty-btn" onclick="upd(${item.id},-1)">-</button>
                         <input type="number" class="qty-input" value="${item.qtd}" onchange="set(${item.id},this.value)">
@@ -98,7 +100,7 @@
                     </div>`;
                 list.appendChild(div);
             });
-            if(!isCalculated) localStorage.setItem('salgados_db_v3', JSON.stringify(db));
+            localStorage.setItem('salgados_db_v3', JSON.stringify(db));
         }
 
         function upd(id, v) { 
@@ -112,73 +114,65 @@
 
         function saveAsBase() {
             localStorage.setItem('last_pdf_values', JSON.stringify(db));
-            document.getElementById('status-msg').innerText = "✅ Base salva! Agora ajuste os valores atuais e clique em CALCULAR.";
-            alert("Estoque atual salvo como base de comparação.");
+            document.getElementById('status-msg').innerText = "✅ Base salva para o cálculo.";
+            alert("Estoque salvo como base.");
         }
 
-        function calculateDifference() {
+        function calculateAndAccumulate() {
             const baseStr = localStorage.getItem('last_pdf_values');
             if(!baseStr) {
-                alert("Você precisa salvar uma BASE primeiro para poder calcular a diferença.");
+                alert("Clique em SALVAR BASE antes de calcular.");
                 return;
             }
             const baseData = JSON.parse(baseStr);
             
-            db = db.map(item => {
+            db.forEach(item => {
                 const baseItem = baseData.find(b => b.id === item.id);
                 const baseQtd = baseItem ? baseItem.qtd : 0;
-                return { ...item, qtd: item.qtd - baseQtd };
+                const diferenca = item.qtd - baseQtd;
+
+                let itemConsolidado = consolidado.find(c => c.id === item.id);
+                if(itemConsolidado) itemConsolidado.qtd += diferenca;
             });
 
-            isCalculated = true;
-            document.getElementById('status-msg').innerText = "📊 Diferença calculada. Você já pode gerar o PDF.";
-            render();
+            localStorage.setItem('salgados_consolidado', JSON.stringify(consolidado));
+            document.getElementById('status-msg').innerText = "📊 Diferença somada ao PDF final.";
+            alert("Valores acumulados com sucesso.");
         }
 
         function clearData() { 
-            if(confirm('Isso apagará tudo, inclusive a base salva. Deseja continuar?')) { 
+            if(confirm('Limpar tudo (tela, base e histórico do PDF)?')) { 
                 db = DATA_BASE.map(item => ({ ...item, qtd: 0 }));
-                localStorage.removeItem('last_pdf_values');
-                localStorage.removeItem('salgados_db_v3');
-                isCalculated = false;
-                document.getElementById('status-msg').innerText = "Dados resetados.";
+                consolidado = DATA_BASE.map(item => ({ ...item, qtd: 0 }));
+                localStorage.clear();
+                document.getElementById('status-msg').innerText = "Tudo limpo.";
                 render(); 
             } 
         }
 
-        // Função de importação via PDF (usando extração de texto direta do PDF)
         async function handleFile(file) {
             if(!file) return;
-            const loader = document.getElementById('loader');
-            loader.style.display = 'flex';
+            document.getElementById('loader').style.display = 'flex';
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
                 const page = await pdf.getPage(1);
                 const textContent = await page.getTextContent();
-                const textLines = textContent.items.map(item => item.str.toLowerCase());
+                const fullText = textContent.items.map(item => item.str).join(" ").toLowerCase();
 
-                const fullText = textLines.join(" ");
                 const sortedSearch = [...DATA_BASE].sort((a, b) => b.nome.length - a.nome.length);
 
-                // Lógica de busca de valores no texto do PDF
                 sortedSearch.forEach(item => {
                     const nomeSabor = item.nome.toLowerCase();
-                    if (fullText.includes(nomeSabor)) {
-                        // Tenta encontrar o número mais próximo após o nome do sabor
-                        const regex = new RegExp(nomeSabor + "\\s*(\\d+)", "i");
-                        const match = fullText.match(regex);
-                        if (match) {
-                            let localItem = db.find(i => i.id === item.id);
-                            if(localItem) localItem.qtd = parseInt(match[1]);
-                        }
+                    const regex = new RegExp(nomeSabor + "\\s*(-?\\d+)", "i");
+                    const match = fullText.match(regex);
+                    if (match) {
+                        let localItem = db.find(i => i.id === item.id);
+                        if(localItem) localItem.qtd = parseInt(match[1]);
                     }
                 });
-            } catch (e) { 
-                alert("Erro ao ler o PDF. Certifique-se de que é um PDF com texto legível."); 
-            }
-            loader.style.display = 'none';
-            isCalculated = false;
+            } catch (e) { alert("Erro ao ler PDF."); }
+            document.getElementById('loader').style.display = 'none';
             render();
         }
 
@@ -186,15 +180,14 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             let y = 20;
-            const titulo = isCalculated ? "RELATÓRIO DE DIFERENÇA" : "ESTOQUE ATUAL";
 
             doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F');
             doc.setTextColor(212, 175, 55); doc.setFontSize(16);
-            doc.text(titulo, 105, y, { align: 'center' });
+            doc.text("RELATÓRIO CONSOLIDADO", 105, y, { align: 'center' });
             
             y += 15; doc.setFontSize(10); doc.setTextColor(255, 255, 255);
             
-            db.forEach(item => {
+            consolidado.forEach(item => {
                 if(item.qtd !== 0) {
                     doc.text(`${item.nome}`, 20, y); 
                     doc.text(String(item.qtd), 180, y, { align: 'right' });
@@ -202,7 +195,7 @@
                     if(y > 280) { doc.addPage(); y = 20; doc.setFillColor(18, 18, 18); doc.rect(0, 0, 210, 297, 'F'); }
                 }
             });
-            doc.save(isCalculated ? 'diferenca.pdf' : 'estoque.pdf');
+            doc.save('estoque_final.pdf');
         }
 
         document.getElementById('doc-import').onchange = e => handleFile(e.target.files[0]);
