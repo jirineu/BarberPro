@@ -96,6 +96,42 @@
     </div>
 
     <script>
+function forcarModoOff() {
+    modoProducaoAtivo = false; // Garante que a variável comece desligada
+    
+    const btnToggle = document.getElementById('toggle-producao');
+    const botoesProducao = document.querySelectorAll('.modo-prod-apenas');
+    const btnSalvar = document.getElementById('btn-salvar-nuvem');
+    const btnLimpar = document.getElementById('btn-limpar-tela');
+
+    // Reset visual do botão interruptor
+    if (btnToggle) {
+        btnToggle.style.backgroundColor = "transparent";
+        btnToggle.style.color = "var(--accent)";
+    }
+
+    // Esconde todos os botões que pertencem apenas ao modo PROD
+    botoesProducao.forEach(btn => {
+        btn.style.display = "none";
+    });
+
+    // Ajusta o layout dos botões padrão (50/50 na primeira linha)
+    if (btnSalvar && btnLimpar) {
+        btnSalvar.style.display = "flex";
+        btnSalvar.style.gridColumn = "span 1";
+        btnSalvar.style.order = "0";
+        
+        btnLimpar.style.display = "flex";
+        btnLimpar.style.gridColumn = "span 1";
+        btnLimpar.style.order = "0";
+        
+        // Reset de cores caso tenham mudado no modo produção
+        btnSalvar.innerText = "💾 SALVAR NA NUVEM";
+        btnSalvar.style.borderColor = "var(--accent)";
+        btnSalvar.style.color = "var(--accent)";
+    }
+}
+
 let modoProducaoAtivo = false;
 
 function toggleModoProducao() {
@@ -191,9 +227,7 @@ window.confirm = function(msg) { console.log("Confirm bloqueado: " + msg); retur
 
 // 3. Chame a função ao carregar para garantir que comece escondido
 window.onload = function() {
-    // 1. Verifica se o usuário já está logado
     if (!localStorage.getItem('sessao_ativa')) {
-        // Se não estiver, substitui todo o corpo da página pela tela de login
         document.body.innerHTML = `
             <div style="background:#121212; height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family: sans-serif;">
                 <h2 style="color:#D4AF37; margin-bottom: 20px;">ACESSO RESTRITO - SENAGA</h2>
@@ -203,11 +237,13 @@ window.onload = function() {
                 <div id="login-msg" style="color: #ff4d4d; margin-top: 15px; font-size: 14px;"></div>
             </div>`;
     } else {
-        // Se já estiver logado, carrega o sistema normalmente
-        renderStores();
-        render();
+        // --- ORDEM DE CARREGAMENTO CRÍTICA ---
+        renderStores();      // 1. Cria as lojas
+        render();            // 2. Cria a lista de produtos
+        forcarModoOff();     // 3. Força o layout a organizar os botões no modo desligado
     }
 };
+
 
 async function efetuarLogin() {
     const user = document.getElementById('user').value; // O ID/Nome que você preencheu na planilha
