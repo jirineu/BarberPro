@@ -96,6 +96,8 @@
     </div>
 
     <script>
+let modoProducaoAtivo = false;
+
 function toggleModoProducao() {
     modoProducaoAtivo = !modoProducaoAtivo;
     const btnToggle = document.getElementById('toggle-producao');
@@ -197,7 +199,7 @@ window.confirm = function(msg) { console.log("Confirm bloqueado: " + msg); retur
             });
         }
 
-        let modoProducaoAtivo = false;
+        
 
 // 2. Função para alternar o modo
 
